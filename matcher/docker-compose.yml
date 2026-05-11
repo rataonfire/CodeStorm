@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: recon
+      POSTGRES_USER: recon
+      POSTGRES_PASSWORD: recon
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U recon -d recon"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - reconciler_net
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - reconciler_net
+
+  reconciler:
+    build: .
+    environment:
+      POSTGRES_URL: "postgres://recon:recon@postgres:5432/recon?sslmode=disable"
+      REDIS_URL: "redis://redis:6379/0"
+      LOG_LEVEL: "info"
+      HEALTH_ADDR: "0.0.0.0:8081"
+      RECONCILER_TIMEOUT_MS: "2000"
+      RECONCILER_ESCALATION_MS: "10000"
+      RECONCILER_DEDUP_WINDOW_MS: "600000"
+      RECONCILER_TIMER_TICK_MS: "100"
+      RECONCILER_EXPECTED_SOURCES_COUNT: "3"
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      - "8081:8081"
+    networks:
+      - reconciler_net
+    restart: always
+
+  test:
+    build:
+      context: .
+      target: builder
+    command: cargo test
+    working_dir: /app
+    networks:
+      - reconciler_net
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      POSTGRES_URL: "postgres://recon:recon@postgres:5432/recon?sslmode=disable"
+      REDIS_URL: "redis://redis:6379/0"
+
+networks:
+  reconciler_net:
+    driver: bridge
