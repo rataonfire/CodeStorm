@@ -22,7 +22,7 @@ func MismatchPerMinute(c *fiber.Ctx) error {
 	}
 	defer rows.Close()
 
-	var results []models.MismatchPerMinute
+	results := make([]models.MismatchPerMinute, 0)
 	for rows.Next() {
 		var mm models.MismatchPerMinute
 		err := rows.Scan(&mm.Minute, &mm.MismatchCount)

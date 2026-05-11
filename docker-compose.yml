@@ -1,0 +1,114 @@
+services:
+  postgres_api:
+    image: postgres:15-alpine
+    container_name: payment-postgres-api
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: payment_reconciliation
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_api_data:/var/lib/postgresql/data
+      - ./api-gateway/migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app_net
+
+  api:
+    build:
+      context: ./api-gateway
+    container_name: payment-api-gateway
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres_api:5432/payment_reconciliation?sslmode=disable
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres_api:
+        condition: service_healthy
+    networks:
+      - app_net
+
+  matcher_postgres:
+    image: postgres:15-alpine
+    container_name: payment-matcher-postgres
+    environment:
+      POSTGRES_USER: recon
+      POSTGRES_PASSWORD: recon
+      POSTGRES_DB: recon
+    ports:
+      - "5433:5432"
+    volumes:
+      - matcher_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U recon -d recon"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app_net
+
+  redis:
+    image: redis:7-alpine
+    container_name: payment-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app_net
+
+  matcher:
+    build:
+      context: ./matcher
+    container_name: payment-matcher
+    environment:
+      POSTGRES_URL: "postgres://recon:recon@matcher_postgres:5432/recon?sslmode=disable"
+      REDIS_URL: "redis://redis:6379/0"
+      HEALTH_ADDR: "0.0.0.0:8081"
+      LOG_LEVEL: "info"
+      RECONCILER_TIMEOUT_MS: "2000"
+      RECONCILER_ESCALATION_MS: "10000"
+      RECONCILER_DEDUP_WINDOW_MS: "600000"
+      RECONCILER_TIMER_TICK_MS: "100"
+      RECONCILER_EXPECTED_SOURCES_COUNT: "3"
+    ports:
+      - "8081:8081"
+    depends_on:
+      matcher_postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - app_net
+
+  integration-test:
+    image: alpine:3.18
+    container_name: payment-integration-test
+    depends_on:
+      api:
+        condition: service_started
+      matcher:
+        condition: service_started
+    volumes:
+      - ./tests/integration:/tests
+    working_dir: /tests
+    command: ["sh", "-c", "apk add --no-cache curl jq >/dev/null 2>&1 && sh ./connectivity_test.sh"]
+    networks:
+      - app_net
+
+volumes:
+  postgres_api_data:
+  matcher_postgres_data:
+
+networks:
+  app_net:
+    driver: bridge

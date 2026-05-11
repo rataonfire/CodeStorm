@@ -5,7 +5,7 @@ use crate::model::StreamMessage;
 use crate::store::RedisStore;
 use anyhow::{Context, Result};
 use redis::streams::{StreamReadOptions, StreamReadReply};
-use redis::AsyncCommands;
+use redis::{AsyncCommands, Value};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
@@ -46,9 +46,16 @@ pub async fn run(
                 let id_str = stream_id.id.clone();
 
                 // Извлекаем payload — Ingestor кладёт его в поле "payload"
-                let mut buf = [0u8; 1024];
-                let n = match socket.read(&mut buf).await {
-                    Some(redis::Value::Data(bytes)) => String::from_utf8_lossy(bytes).to_string(),
+                let payload = match stream_id.map.get("payload") {
+                    Some(Value::Data(bytes)) => String::from_utf8_lossy(bytes).to_string(),
+                    Some(Value::Bulk(values)) if values.len() == 1 => match &values[0] {
+                        Value::Data(bytes) => String::from_utf8_lossy(bytes).to_string(),
+                        _ => {
+                            warn!(stream_id = %id_str, "payload field is not raw bytes");
+                            let _ = ack_message(&mut conn, &config.redis_stream_name, &config.redis_consumer_group, &id_str).await;
+                            continue;
+                        }
+                    },
                     _ => {
                         warn!(stream_id = %id_str, "skipping message without payload field");
                         let _ = ack_message(&mut conn, &config.redis_stream_name, &config.redis_consumer_group, &id_str).await;

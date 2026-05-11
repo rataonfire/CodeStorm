@@ -1,0 +1,40 @@
+{
+  "summary": {
+    "total": 6,
+    "passed": 5,
+    "failed": 0,
+    "skipped": 1
+  },
+  "results": [
+  {
+    "name": "matcher health endpoint",
+    "status": "passed",
+    "message": ""
+  },
+  {
+    "name": "matcher readiness endpoint",
+    "status": "passed",
+    "message": ""
+  },
+  {
+    "name": "api transactions endpoint",
+    "status": "passed",
+    "message": ""
+  },
+  {
+    "name": "api incidents endpoint",
+    "status": "passed",
+    "message": ""
+  },
+  {
+    "name": "api metrics endpoint",
+    "status": "passed",
+    "message": ""
+  },
+  {
+    "name": "api transaction details endpoint",
+    "status": "skipped",
+    "message": "no transactions available"
+  }
+]
+}

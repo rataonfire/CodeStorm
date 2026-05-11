@@ -1,0 +1,6 @@
+PASS: matcher health endpoint
+PASS: matcher readiness endpoint
+PASS: api transactions endpoint
+PASS: api incidents endpoint
+PASS: api metrics endpoint
+SKIP: api transaction details endpoint (no transactions returned)
