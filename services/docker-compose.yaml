@@ -1,0 +1,121 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: recon
+      POSTGRES_PASSWORD: recon
+      POSTGRES_DB: recon
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U recon"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  scenario:
+    build: ./services/scenario
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      SCENARIO_TPS: "10"
+      SCENARIO_TX_TYPES: "card,transfer"
+      SCENARIO_CURRENCY: "UZS"
+      SCENARIO_AMOUNT_MIN: "10000"
+      SCENARIO_AMOUNT_MAX: "10000000"
+      SCENARIO_GATEWAY_FEE_PCT: "0.5"
+      SCENARIO_BANK_FEE_PCT: "0.2"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  emulator-merchant:
+    build: ./services/emulator-merchant
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      EMULATOR_INGESTOR_URL: http://ingestor:8080
+      EMULATOR_PCT_MISSING: "0.05"
+      EMULATOR_PCT_DUPLICATE: "0.02"
+      EMULATOR_PCT_WRONG_AMOUNT: "0.03"
+      EMULATOR_PCT_WRONG_FEE: "0.00"
+      EMULATOR_DELAY_MS_MIN: "50"
+      EMULATOR_DELAY_MS_MAX: "800"
+    depends_on:
+      scenario:
+        condition: service_started
+      ingestor:
+        condition: service_started
+    restart: unless-stopped
+
+  emulator-gateway:
+    build: ./services/emulator-gateway
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      EMULATOR_INGESTOR_URL: http://ingestor:8080
+      EMULATOR_PCT_MISSING: "0.05"
+      EMULATOR_PCT_DUPLICATE: "0.02"
+      EMULATOR_PCT_WRONG_AMOUNT: "0.03"
+      EMULATOR_PCT_WRONG_FEE: "0.03"
+      EMULATOR_DELAY_MS_MIN: "50"
+      EMULATOR_DELAY_MS_MAX: "800"
+    depends_on:
+      scenario:
+        condition: service_started
+      ingestor:
+        condition: service_started
+    restart: unless-stopped
+
+  emulator-bank:
+    build: ./services/emulator-bank
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      EMULATOR_INGESTOR_URL: http://ingestor:8080
+      EMULATOR_PCT_MISSING: "0.05"
+      EMULATOR_PCT_DUPLICATE: "0.02"
+      EMULATOR_PCT_WRONG_AMOUNT: "0.03"
+      EMULATOR_PCT_WRONG_FEE: "0.03"
+      EMULATOR_DELAY_MS_MIN: "50"
+      EMULATOR_DELAY_MS_MAX: "800"
+    depends_on:
+      scenario:
+        condition: service_started
+      ingestor:
+        condition: service_started
+    restart: unless-stopped
+
+  ingestor:
+    build: ./services/ingestor
+    ports:
+      - "8080:8080"
+    environment:
+      POSTGRES_URL: postgres://recon:recon@postgres:5432/recon?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      INGESTOR_PORT: "8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
