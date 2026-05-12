@@ -11,35 +11,20 @@ import (
 
 func GetTransactions(c *fiber.Ctx) error {
 	limit, _ := strconv.Atoi(c.Query("limit", "20"))
-	if limit > 100 {
-		limit = 100
+	if limit > 200 {
+		limit = 200
 	}
 	offset, _ := strconv.Atoi(c.Query("offset", "0"))
 	status := c.Query("status")
-	from := c.Query("from")
-	to := c.Query("to")
 
-	query := `
-		SELECT transaction_id, overall_status, created_at, updated_at, merchant_id, tx_type
-		FROM transactions
-		WHERE 1=1
-	`
+	query := `SELECT transaction_id, overall_status, created_at, updated_at, merchant_id, tx_type
+		FROM transactions WHERE 1=1`
 	args := []interface{}{}
 	argIdx := 1
 
 	if status != "" {
 		query += fmt.Sprintf(" AND overall_status = $%d", argIdx)
 		args = append(args, status)
-		argIdx++
-	}
-	if from != "" {
-		query += fmt.Sprintf(" AND created_at >= $%d", argIdx)
-		args = append(args, from)
-		argIdx++
-	}
-	if to != "" {
-		query += fmt.Sprintf(" AND created_at <= $%d", argIdx)
-		args = append(args, to)
 		argIdx++
 	}
 	query += fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", argIdx, argIdx+1)
@@ -64,11 +49,14 @@ func GetTransactions(c *fiber.Ctx) error {
 		transactions = append(transactions, t)
 	}
 
+	// Получить общее количество (приблизительное)
+	var total int
+	_ = db.Pool.QueryRow(c.Context(), "SELECT COUNT(*) FROM transactions").Scan(&total)
+
 	return c.JSON(fiber.Map{
-		"data":   transactions,
-		"limit":  limit,
-		"offset": offset,
-		"total":  len(transactions),
+		"items":         transactions,
+		"next_cursor":   nil,
+		"total_estimate": total,
 	})
 }
 

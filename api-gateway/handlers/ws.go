@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"log"
+	"time"
 
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
@@ -17,24 +18,40 @@ func InitRedis(addr string) {
 	})
 }
 
-func WebSocketUpgrade(app *fiber.App) {
-	app.Use("/ws", func(c *fiber.Ctx) error {
+func SetupWebSocket(api fiber.Router) {
+	api.Use("/ws", func(c *fiber.Ctx) error {
 		if websocket.IsWebSocketUpgrade(c) {
 			return c.Next()
 		}
 		return fiber.ErrUpgradeRequired
 	})
 
-	app.Get("/ws", websocket.New(func(c *websocket.Conn) {
-		// Подписываемся на Redis канал
-		pubsub := redisClient.Subscribe(context.Background(), "reconciliation_events")
-		defer pubsub.Close()
+	api.Get("/ws", websocket.New(func(c *websocket.Conn) {
+		defer c.Close()
 
+		// Подписка на Redis канал
+		pubsub := redisClient.Subscribe(context.Background(), "reconciliation.events")
+		defer pubsub.Close()
 		ch := pubsub.Channel()
+
+		// Heartbeat: клиент ожидает pong
+		c.SetPingHandler(func(appData string) error {
+			return c.WriteMessage(websocket.PongMessage, []byte(appData))
+		})
+
+		// Читаем пинги от клиента (каждые 30 сек)
+		go func() {
+			for {
+				if _, _, err := c.ReadMessage(); err != nil {
+					return
+				}
+			}
+		}()
+
+		// Отправляем события из Redis
 		for msg := range ch {
-			// Отправляем сообщение клиенту
 			if err := c.WriteMessage(websocket.TextMessage, []byte(msg.Payload)); err != nil {
-				log.Println("write error:", err)
+				log.Println("WS write error:", err)
 				break
 			}
 		}
