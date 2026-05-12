@@ -6,7 +6,8 @@ COPY . .
 RUN go build -o ingestor .
 
 FROM alpine:latest
-RUN apk --no-cache add ca-certificates
-WORKDIR /root/
+RUN apk --no-cache add ca-certificates wget
+WORKDIR /app
 COPY --from=builder /app/ingestor .
+EXPOSE 8080
 CMD ["./ingestor"]
