@@ -9,10 +9,9 @@ import (
 func MismatchPerMinute(c *fiber.Ctx) error {
 	hours := c.QueryInt("hours", 1)
 	query := `
-		SELECT date_trunc('minute', created_at) as minute, COUNT(*) 
-		FROM incidents 
-		WHERE incident_type IN ('amount_mismatch', 'fee_mismatch') 
-		  AND created_at > NOW() - make_interval(hours => $1)
+		SELECT date_trunc('minute', created_at) as minute, COUNT(*)
+		FROM incidents
+		WHERE created_at > NOW() - make_interval(hours => $1)
 		GROUP BY minute
 		ORDER BY minute ASC
 	`
@@ -22,7 +21,7 @@ func MismatchPerMinute(c *fiber.Ctx) error {
 	}
 	defer rows.Close()
 
-	var results []models.MismatchPerMinute
+	results := []models.MismatchPerMinute{}
 	for rows.Next() {
 		var mm models.MismatchPerMinute
 		err := rows.Scan(&mm.Minute, &mm.MismatchCount)

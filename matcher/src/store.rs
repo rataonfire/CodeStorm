@@ -5,6 +5,7 @@ use redis::AsyncCommands;
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use std::time::Duration;
 use uuid::Uuid;
+use chrono::{Utc, SecondsFormat};
 
 #[derive(Clone)]
 pub struct PostgresStore {
@@ -319,5 +320,100 @@ impl RedisStore {
         let mut c = self.conn.clone();
         let _: i64 = c.publish(channel, message).await?;
         Ok(())
+    }
+
+    // Metrics tracking methods
+    pub async fn record_event_processed(&self, source: &str, latency_ms: i64) -> Result<()> {
+        let mut c = self.conn.clone();
+        
+        // Increment event counter
+        let _: () = c.incr("metrics:events:total", 1).await?;
+        
+        // Record source last seen
+        let now = Utc::now().to_rfc3339_opts(SecondsFormat::Nanos, true);
+        let _: () = redis::cmd("SETEX")
+            .arg(format!("source:last_seen:{}", source))
+            .arg(3600)
+            .arg(now)
+            .query_async(&mut c)
+            .await?;
+        
+        // Increment source event count
+        let _: () = c.incr(format!("source:events:{}", source), 1).await?;
+        
+        // Add to latency histogram (just store for later retrieval)
+        let _: () = c.lpush("metrics:latencies", latency_ms.to_string()).await?;
+        // Keep only last 1000 measurements
+        let _: () = c.ltrim("metrics:latencies", 0, 999).await?;
+        
+        // Set expiry on metrics to auto-clean old data
+        let _: () = c.expire("metrics:events:total", 3600).await?;
+        
+        Ok(())
+    }
+
+    pub async fn record_match_result(&self, matched: bool) -> Result<()> {
+        let mut c = self.conn.clone();
+        
+        if matched {
+            let _: () = c.incr("metrics:matches:success", 1).await?;
+        } else {
+            let _: () = c.incr("metrics:matches:failed", 1).await?;
+        }
+        
+        Ok(())
+    }
+
+    pub async fn get_matcher_stats(&self) -> Result<serde_json::Value> {
+        let mut c = self.conn.clone();
+        
+        let total_events: i64 = c.get("metrics:events:total").await.unwrap_or(0);
+        let success_matches: i64 = c.get("metrics:matches:success").await.unwrap_or(0);
+        let failed_matches: i64 = c.get("metrics:matches:failed").await.unwrap_or(0);
+        let active_windows: i64 = (total_events - success_matches - failed_matches).max(0);
+        
+        // Get latencies for percentile calculation
+        let latencies: Vec<String> = c.lrange("metrics:latencies", 0, -1).await.unwrap_or_default();
+        let mut latency_values: Vec<i64> = latencies
+            .iter()
+            .filter_map(|s| s.parse::<i64>().ok())
+            .collect();
+        latency_values.sort();
+        
+        let p50 = if !latency_values.is_empty() {
+            latency_values[latency_values.len() / 2]
+        } else {
+            0
+        };
+        
+        let p99 = if !latency_values.is_empty() {
+            latency_values[std::cmp::min(latency_values.len() * 99 / 100, latency_values.len() - 1)]
+        } else {
+            0
+        };
+        
+        let throughput = total_events; // In production, would calculate per second
+        
+        Ok(serde_json::json!({
+            "events_processed": total_events,
+            "throughput_eps": throughput / 60, // Rough estimate
+            "successful_matches": success_matches,
+            "failed_matches": failed_matches,
+            "match_success_rate": if success_matches + failed_matches > 0 {
+                (success_matches as f64 / (success_matches + failed_matches) as f64 * 100.0) as i32
+            } else {
+                0
+            },
+            "active_windows": (total_events - success_matches - failed_matches).max(0),
+            "latency": {
+                "p50_ms": p50,
+                "p99_ms": p99,
+                "avg_ms": if !latency_values.is_empty() {
+                    latency_values.iter().sum::<i64>() / latency_values.len() as i64
+                } else {
+                    0
+                }
+            }
+        }))
     }
 }

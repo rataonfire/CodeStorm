@@ -185,6 +185,16 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  frontend:
+    build: ./frontend
+    container_name: recon-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    restart: unless-stopped
+
   integration-tests:
     build: ./tests/integration
     container_name: recon-integration-tests

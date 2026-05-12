@@ -57,6 +57,7 @@ impl MatchingEngine {
     ))]
     pub async fn handle_event(&self, msg: StreamMessage) -> Result<()> {
         let event = msg.event;
+        let start_time = Utc::now().timestamp_millis();
 
         // 1. Дедупликация по event_id (защита от ретраев)
         let is_new = self
@@ -91,6 +92,10 @@ impl MatchingEngine {
                 ),
             };
             self.persist_incident(&incident).await?;
+            
+            // Record metrics
+            let latency = Utc::now().timestamp_millis() - start_time;
+            let _ = self.redis.record_event_processed(&event.source.to_string(), latency).await;
             return Ok(());
         }
 
@@ -138,6 +143,10 @@ impl MatchingEngine {
                 .await?;
         }
 
+        // Record metrics
+        let latency = Utc::now().timestamp_millis() - start_time;
+        let _ = self.redis.record_event_processed(&event.source.to_string(), latency).await;
+
         Ok(())
     }
 
@@ -175,6 +184,7 @@ impl MatchingEngine {
         match result {
             ReconciliationResult::Matched => {
                 info!(duration_ms, "transaction matched");
+                let _ = self.redis.record_match_result(true).await;
                 self.publisher
                     .publish_event(PubsubEvent::TransactionMatched {
                         transaction_id: tx_id,
@@ -188,6 +198,7 @@ impl MatchingEngine {
                     incidents_count = incidents.len(),
                     "transaction has mismatches"
                 );
+                let _ = self.redis.record_match_result(false).await;
                 for incident in incidents {
                     self.persist_incident(&incident).await?;
                 }

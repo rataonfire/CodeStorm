@@ -43,6 +43,8 @@ func main() {
 	api.Post("/incidents/:id/ack", handlers.AcknowledgeIncident)
 	api.Post("/incidents/:id/resolve", handlers.ResolveIncident)
 	api.Get("/metrics/mismatches-per-minute", handlers.MismatchPerMinute)
+	api.Get("/metrics/matcher-stats", handlers.GetMatcherStatsHandler)
+	api.Get("/metrics/matcher-speedometer", handlers.GetMatcherSpeedometer)
 	api.Get("/sources/health", handlers.SourcesHealth)
 
 	handlers.SetupWebSocket(api)
