@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use std::fmt;
 use uuid::Uuid;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Source {
     Merchant,
     Gateway,
@@ -25,6 +27,7 @@ impl Source {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PaymentEvent {
     pub event_id: Uuid,
     pub transaction_id: Uuid,
@@ -39,6 +42,7 @@ pub struct PaymentEvent {
 }
 
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StreamMessage {
     pub event: PaymentEvent,
     pub internal_event_id: Uuid,
@@ -47,6 +51,7 @@ pub struct StreamMessage {
     pub ingested_at_ms: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PartialTransaction {
     pub transaction_id: Uuid,
     pub events: HashMap<Source, PaymentEvent>,
@@ -83,6 +88,8 @@ impl PartialTransaction {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum IncidentKind {
     AmountMismatch,
     FeeMismatch,
@@ -121,7 +128,7 @@ pub enum ReconciliationResult {
 }
 
 /// Детали по каждому источнику для записи в reconciliation_details.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ReconciliationDetail {
     pub source: Source,
     pub amount_expected: Option<i64>,
@@ -283,6 +290,8 @@ pub fn build_details(partial: &PartialTransaction) -> Vec<ReconciliationDetail> 
 }
 
 /// Событие для публикации в Redis Pub/Sub.
+#[derive(Debug, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum PubsubEvent {
     TransactionReceived {
         transaction_id: Uuid,

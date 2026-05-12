@@ -77,6 +77,10 @@ impl MatchingEngine {
         if !first_time_source {
             // Этот источник уже присылал событие для этой транзакции — дубль
             warn!("duplicate source for transaction");
+            // Ensure transaction row exists before inserting incident (FK constraint).
+            self.pg
+                .upsert_transaction(tx_id, "pending", &event.currency, &event.tx_type, event.merchant_id.as_deref())
+                .await?;
             let incident = Incident {
                 transaction_id: tx_id,
                 incident_type: IncidentKind::Duplicate,

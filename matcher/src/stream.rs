@@ -1,4 +1,3 @@
-
 use crate::config::Config;
 use crate::matcher::MatchingEngine;
 use crate::model::StreamMessage;
@@ -45,10 +44,11 @@ pub async fn run(
             for stream_id in stream_key.ids {
                 let id_str = stream_id.id.clone();
 
-                // Извлекаем payload — Ingestor кладёт его в поле "payload"
-                let mut buf = [0u8; 1024];
-                let n = match socket.read(&mut buf).await {
-                    Some(redis::Value::Data(bytes)) => String::from_utf8_lossy(bytes).to_string(),
+                // Ingestor stores the full JSON payload in the "payload" field.
+                let payload = match stream_id.map.get("payload") {
+                    Some(redis::Value::Data(bytes)) => {
+                        String::from_utf8_lossy(bytes).to_string()
+                    }
                     _ => {
                         warn!(stream_id = %id_str, "skipping message without payload field");
                         let _ = ack_message(&mut conn, &config.redis_stream_name, &config.redis_consumer_group, &id_str).await;
@@ -79,7 +79,6 @@ pub async fn run(
                         }
                     }
                     Err(e) => {
-
                         error!(error = %e, stream_id = %id_str, "handle_event failed, message will be retried");
                     }
                 }
