@@ -1,13 +1,13 @@
-FROM golang:1.25-alpine AS builder
+FROM golang:1.22-alpine AS builder
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN go build -o api-gateway .
+RUN go build -o ingestor .
 
 FROM alpine:latest
 RUN apk --no-cache add ca-certificates wget
 WORKDIR /root/
-COPY --from=builder /app/api-gateway .
-EXPOSE 8090
-CMD ["./api-gateway"]
+COPY --from=builder /app/ingestor .
+EXPOSE 8080
+CMD ["./ingestor"]

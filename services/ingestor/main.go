@@ -61,10 +61,8 @@ func main() {
 		return c.SendStatus(fiber.StatusOK)
 	})
 
-	// Event endpoints
-	app.Post("/api/v1/events/merchant", handler.handleEvent)
-	app.Post("/api/v1/events/gateway", handler.handleEvent)
-	app.Post("/api/v1/events/bank", handler.handleEvent)
+	// Event endpoints — :source is validated inside the handler
+	app.Post("/api/v1/events/:source", handler.handleEvent)
 
 	// Start server
 	port := getEnv("INGESTOR_PORT", "8080")

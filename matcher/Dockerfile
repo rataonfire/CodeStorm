@@ -28,6 +28,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     libssl3 \
+    wget \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/target/release/reconciler /usr/local/bin/reconciler

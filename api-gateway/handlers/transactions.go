@@ -65,10 +65,9 @@ func GetTransactions(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"data":   transactions,
-		"limit":  limit,
-		"offset": offset,
-		"total":  len(transactions),
+		"items":          transactions,
+		"total_estimate": len(transactions),
+		"next_cursor":    nil,
 	})
 }
 
