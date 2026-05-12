@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"strconv"
@@ -86,8 +87,8 @@ func main() {
 			EventID:       uuid.New().String(),
 			TransactionID: canonical.TransactionID,
 			Source:        source,
-			AmountMinor:   amountMinor,            // bank amount = N - F_g
-			FeeMinor:      canonical.BankFeeMinor, // bank fee = F_b
+			AmountMinor:   amountMinor,
+			FeeMinor:      canonical.BankFeeMinor,
 			Currency:      canonical.Currency,
 			TimestampMs:   time.Now().UnixMilli(),
 			TxType:        canonical.TxType,
@@ -136,28 +137,28 @@ func applyNoise(event *PaymentEvent, missingPct, duplicatePct, wrongAmountPct, w
 	shouldSend = true
 	shouldDuplicate = false
 
-	if randFloat() < missingPct {
+	if rand.Float64() < missingPct {
 		return false, false
 	}
 
-	if randFloat() < wrongAmountPct {
+	if rand.Float64() < wrongAmountPct {
 		event.AmountMinor = mutateAmount(event.AmountMinor)
 		log.Printf("Applied amount noise: new amount=%d", event.AmountMinor)
 	}
 
-	if randFloat() < wrongFeePct {
+	if rand.Float64() < wrongFeePct {
 		event.FeeMinor = mutateFee(event.FeeMinor)
 		log.Printf("Applied fee noise: new fee=%d", event.FeeMinor)
 	}
 
-	if randFloat() < duplicatePct {
+	if rand.Float64() < duplicatePct {
 		shouldDuplicate = true
 	}
 
 	if delayMaxMs > 0 {
 		delayMs := delayMinMs
 		if delayMaxMs > delayMinMs {
-			delayMs += randInt(delayMaxMs - delayMinMs)
+			delayMs += rand.Intn(delayMaxMs - delayMinMs)
 		}
 		time.Sleep(time.Duration(delayMs) * time.Millisecond)
 	}
@@ -166,21 +167,13 @@ func applyNoise(event *PaymentEvent, missingPct, duplicatePct, wrongAmountPct, w
 }
 
 func mutateAmount(amount int64) int64 {
-	factor := 0.9 + randFloat()*0.2
+	factor := 0.9 + rand.Float64()*0.2
 	return int64(float64(amount) * factor)
 }
 
 func mutateFee(fee int64) int64 {
-	factor := 0.5 + randFloat()
+	factor := 0.5 + rand.Float64()
 	return int64(float64(fee) * factor)
-}
-
-func randFloat() float64 {
-	return float64(randInt(1000000)) / 1000000.0
-}
-
-func randInt(max int) int {
-	return int(time.Now().UnixNano() % int64(max))
 }
 
 func getEnv(key, defaultValue string) string {
