@@ -7,7 +7,9 @@ export type WsEventType =
   | 'transaction_matched'
   | 'incident_created'
   | 'incident_updated'
-  | 'source_status_changed';
+  | 'source_status_changed'
+  | 'pong'; 
+
 
 export interface WsEvent {
   type: WsEventType;

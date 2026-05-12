@@ -40,7 +40,7 @@ export function TransactionTable() {
 
   return (
     <>
-      <div className="overflow-x-auto shadow-2xl rounded-2xl border border-dark-700/10">
+      <div className="overflow-x-auto shadow-lg rounded-2xl border border-dark-700/10">
         <table className="min-w-full divide-y divide-primary-100">
           <thead className="bg-dark-800/80 backdrop-blur-sm">
             <tr>

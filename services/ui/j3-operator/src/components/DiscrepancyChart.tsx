@@ -18,7 +18,7 @@ export function DiscrepancyChart({ data }: DiscrepancyChartProps) {
   }
 
   return (
-    <div className="bg-white/80 backdrop-blur-sm p-5 rounded-2xl shadow-xl border border-primary-100">
+    <div className="bg-white/80 backdrop-blur-sm p-5 rounded-2xl shadow-lg border border-primary-100">
       <h3 className="text-lg font-semibold text-dark-800 mb-4">
         Расхождения в минуту (за последний час)
       </h3>
