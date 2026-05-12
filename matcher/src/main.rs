@@ -84,7 +84,7 @@ async fn main() -> anyhow::Result<()> {
         })
     };
 
-    // Health-endpoint для docker healthcheck и readiness.
+
     let health_task = {
         let pg = pg.clone();
         let redis = redis.clone();

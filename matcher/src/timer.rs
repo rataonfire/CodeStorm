@@ -15,11 +15,11 @@ pub async fn run(engine: Arc<MatchingEngine>, config: Config) -> Result<()> {
 
     loop {
 
-        if let Err(e) = engine.process_expired_windows().await {
+        if let Err(e) = engine.clone().process_expired_windows().await {
             error!(error = %e, "failed to handle window timeouts");
         }
 
-        if let Err(e) = engine.process_expired_escalations().await {
+        if let Err(e) = engine.clone().process_expired_escalations().await {
             error!(error = %e, "failed to handle incident escalations");
         }
 

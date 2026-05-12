@@ -19,24 +19,24 @@ func SourcesHealth(c *fiber.Ctx) error {
 	result := make(map[string]interface{})
 	
 	for _, source := range sources {
-		// Check if source has sent any events in the last 30 seconds
+
 		lastSeenKey := "source:last_seen:" + source
 		eventCountKey := "source:events:" + source
 		
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		
-		// Get last seen timestamp
+
 		lastSeen, err := redisClient.Get(ctx, lastSeenKey).Result()
 		if err != nil && err.Error() != "redis: nil" {
 			result[source] = "unknown"
 			continue
 		}
 		
-		// Get event count
+
 		count, _ := redisClient.Get(ctx, eventCountKey).Int64()
 		
-		// Determine status based on last seen time
+
 		status := "offline"
 		if lastSeen != "" {
 			lastSeenTime, err := time.Parse(time.RFC3339Nano, lastSeen)

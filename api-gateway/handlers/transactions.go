@@ -17,7 +17,7 @@ func GetTransactions(c *fiber.Ctx) error {
 	offset, _ := strconv.Atoi(c.Query("offset", "0"))
 	status := c.Query("status")
 
-	query := `SELECT transaction_id, overall_status, created_at, updated_at, merchant_id, tx_type
+	query := `SELECT transaction_id, overall_status, created_at, updated_at, merchant_id, tx_type, processing_time_ms
 		FROM transactions WHERE 1=1`
 	args := []interface{}{}
 	argIdx := 1
@@ -41,7 +41,7 @@ func GetTransactions(c *fiber.Ctx) error {
 		var t models.TransactionSummary
 		var merchantID *string
 		err := rows.Scan(&t.TransactionID, &t.OverallStatus, &t.CreatedAt, &t.UpdatedAt,
-			&merchantID, &t.TxType)
+			&merchantID, &t.TxType, &t.ProcessingTimeMS)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -49,7 +49,7 @@ func GetTransactions(c *fiber.Ctx) error {
 		transactions = append(transactions, t)
 	}
 
-	// Получить общее количество (приблизительное)
+
 	var total int
 	_ = db.Pool.QueryRow(c.Context(), "SELECT COUNT(*) FROM transactions").Scan(&total)
 
@@ -66,10 +66,10 @@ func GetTransactionDetails(c *fiber.Ctx) error {
 	var summary models.TransactionSummary
 	var merchantID *string
 	err := db.Pool.QueryRow(c.Context(),
-		`SELECT transaction_id, overall_status, created_at, updated_at, merchant_id, tx_type
+		`SELECT transaction_id, overall_status, created_at, updated_at, merchant_id, tx_type, processing_time_ms
 		FROM transactions WHERE transaction_id = $1`, txID).
 		Scan(&summary.TransactionID, &summary.OverallStatus, &summary.CreatedAt, &summary.UpdatedAt,
-			&merchantID, &summary.TxType)
+			&merchantID, &summary.TxType, &summary.ProcessingTimeMS)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "transaction not found"})
 	}

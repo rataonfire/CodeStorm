@@ -57,7 +57,7 @@ func (h *Handler) handleEvent(c *fiber.Ctx) error {
 		})
 	}
 
-	// Parse request body
+
 	var event PaymentTransactionEvent
 	if err := c.BodyParser(&event); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -68,10 +68,10 @@ func (h *Handler) handleEvent(c *fiber.Ctx) error {
 		})
 	}
 
-	// Set source from URL
+
 	event.Source = source
 
-	// Validate event
+
 	if err := validateEvent(&event); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": fiber.Map{
@@ -81,11 +81,11 @@ func (h *Handler) handleEvent(c *fiber.Ctx) error {
 		})
 	}
 
-	// Idempotency check
+
 	apiKey := c.Get("Authorization")
 	idempotencyKey := c.Get("Idempotency-Key")
 	if idempotencyKey == "" {
-		// Generate from content hash
+
 		hash := sha256.Sum256(c.Body())
 		idempotencyKey = hex.EncodeToString(hash[:])
 	}
@@ -93,7 +93,7 @@ func (h *Handler) handleEvent(c *fiber.Ctx) error {
 	idempKey := fmt.Sprintf("idempotency:%s:%s", apiKey, idempotencyKey)
 	ctx := c.Context()
 
-	// Try to set idempotency key
+
 	set, err := h.rdb.SetNX(ctx, idempKey, "PROCESSING", 24*time.Hour).Result()
 	if err != nil {
 		log.Printf("Idempotency check failed: %v", err)
@@ -106,7 +106,7 @@ func (h *Handler) handleEvent(c *fiber.Ctx) error {
 	}
 
 	if !set {
-		// Key exists, check if it's still processing or return cached response
+
 		val, _ := h.rdb.Get(ctx, idempKey).Result()
 		if val == "PROCESSING" {
 			return c.Status(fiber.StatusConflict).JSON(fiber.Map{
@@ -116,20 +116,20 @@ func (h *Handler) handleEvent(c *fiber.Ctx) error {
 				},
 			})
 		}
-		// Return cached response
+
 		var cachedResp map[string]interface{}
 		if err := json.Unmarshal([]byte(val), &cachedResp); err == nil {
 			return c.Status(fiber.StatusAccepted).JSON(cachedResp)
 		}
 	}
 
-	// Identity resolution (MVP: correlation_id = transaction_id)
+
 	correlationID := event.TransactionID
 
-	// Generate internal ID (UUID v7)
+
 	internalID := uuid.Must(uuid.NewV7()).String()
 
-	// Persist to Postgres
+
 	rawPayload, _ := json.Marshal(event)
 	receivedAtMs := time.Now().UnixMilli()
 
@@ -154,7 +154,7 @@ func (h *Handler) handleEvent(c *fiber.Ctx) error {
 		})
 	}
 
-	// Publish to Redis Stream
+
 	streamMsg := StreamMessage{
 		Event:           event,
 		InternalEventID: internalID,
@@ -190,7 +190,7 @@ func (h *Handler) handleEvent(c *fiber.Ctx) error {
 		})
 	}
 
-	// Cache response
+
 	response := fiber.Map{
 		"status":            "accepted",
 		"internal_event_id": internalID,
@@ -237,7 +237,7 @@ func validateEvent(event *PaymentTransactionEvent) error {
 		return fmt.Errorf("fee_minor must be >= 0")
 	}
 
-	// Merchant must have fee 0
+
 	if event.Source == "merchant" && event.FeeMinor != 0 {
 		return fmt.Errorf("merchant fee_minor must be 0")
 	}
@@ -254,9 +254,9 @@ func validateEvent(event *PaymentTransactionEvent) error {
 		return fmt.Errorf("timestamp_ms must be positive")
 	}
 
-	// Check timestamp not in future
+
 	now := time.Now().UnixMilli()
-	if event.TimestampMs > now+60000 { // Allow 1 minute clock skew
+	if event.TimestampMs > now+60000 {
 		return fmt.Errorf("timestamp_ms is too far in the future")
 	}
 

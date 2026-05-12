@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 
-// ── API helpers ──────────────────────────────────────────────────────────────
 const API = import.meta.env.VITE_API_URL || ''
 
 async function apiFetch(path, opts) {
@@ -21,7 +20,6 @@ function fmtAge(iso) {
   return Math.round(ms / 3600000) + ' ч назад'
 }
 
-// ── Intersection observer for fade-up ────────────────────────────────────────
 function useFadeUp() {
   useEffect(() => {
     const io = new IntersectionObserver(entries => {
@@ -32,7 +30,6 @@ function useFadeUp() {
   }, [])
 }
 
-// ── WebSocket hook ────────────────────────────────────────────────────────────
 function useReconWS(onMessage) {
   const [live, setLive] = useState(false)
   const wsRef = useRef(null)
@@ -71,7 +68,6 @@ function useReconWS(onMessage) {
   return live
 }
 
-// ── Chart canvas (mismatches per minute) ─────────────────────────────────────
 function MismatchChart({ data }) {
   const canvasRef = useRef(null)
 
@@ -96,7 +92,6 @@ function MismatchChart({ data }) {
     const xOf = i => pL + (cW / (points.length - 1)) * i
     const yOf = v => pT + cH - (v / maxV) * cH
 
-    // grid
     ctx.strokeStyle = 'rgba(255,255,255,0.07)'
     ctx.lineWidth = 1
     for (let i = 0; i <= 5; i++) {
@@ -108,7 +103,6 @@ function MismatchChart({ data }) {
       ctx.fillText(String(Math.round(maxV - (maxV / 5) * i)), pL - 6, y + 4)
     }
 
-    // x labels
     ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.font = '11px Inter,sans-serif'
     const step = Math.max(1, Math.floor(points.length / 6))
     for (let i = 0; i < points.length; i += step) {
@@ -116,7 +110,6 @@ function MismatchChart({ data }) {
       ctx.fillText(label, xOf(i), H - 8)
     }
 
-    // area fill
     const g = ctx.createLinearGradient(0, pT, 0, H - pB)
     g.addColorStop(0, 'rgba(11,110,79,0.45)')
     g.addColorStop(1, 'rgba(11,110,79,0.02)')
@@ -126,12 +119,10 @@ function MismatchChart({ data }) {
     ctx.lineTo(pL, pT + cH); ctx.closePath()
     ctx.fillStyle = g; ctx.fill()
 
-    // line
     ctx.beginPath(); ctx.strokeStyle = '#0B6E4F'; ctx.lineWidth = 2
     points.forEach((v, i) => { i === 0 ? ctx.moveTo(xOf(i), yOf(v)) : ctx.lineTo(xOf(i), yOf(v)) })
     ctx.stroke()
 
-    // spike markers
     points.forEach((v, i) => {
       if (v < maxV * 0.6) return
       const x = xOf(i), y = yOf(v)
@@ -144,8 +135,7 @@ function MismatchChart({ data }) {
   return <canvas ref={canvasRef} id="chart" />
 }
 
-// ── Matcher Speedometer component ──────────────────────────────────────────────
-function MatcherSpeedometer({ avgLatency, p50Latency, p99Latency, successRate }) {
+function MatcherSpeedometer({ avgLatency, logicLatency, successRate }) {
   const canvasRef = useRef(null)
 
   useEffect(() => {
@@ -168,32 +158,22 @@ function MatcherSpeedometer({ avgLatency, p50Latency, p99Latency, successRate })
     const centerY = H / 2
     const radius = 80
 
-    // Draw background circle
     ctx.fillStyle = 'rgba(11, 110, 79, 0.1)'
     ctx.beginPath()
     ctx.arc(centerX, centerY, radius + 15, 0, Math.PI * 2)
     ctx.fill()
 
-    // Draw gauge arc background
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)'
     ctx.lineWidth = 20
     ctx.beginPath()
     ctx.arc(centerX, centerY, radius, Math.PI, Math.PI * 2, false)
     ctx.stroke()
 
-    // Draw gauge arc (colored based on latency - lower is better)
-    // 0-50ms is good (green), 50-200ms is medium (yellow), 200ms+ is bad (red)
-    const normalizedLatency = Math.min(avgLatency / 300, 1) // Max 300ms for scale
-    const endAngle = Math.PI + (Math.PI * normalizedLatency)
+    const normalizedLogic = Math.min(logicLatency / 10, 1)
+    const endAngle = Math.PI + (Math.PI * normalizedLogic)
     
-    let hue
-    if (avgLatency < 50) {
-      hue = 120 // Green
-    } else if (avgLatency < 200) {
-      hue = 50 // Yellow
-    } else {
-      hue = 0 // Red
-    }
+    let hue = logicLatency < 1 ? 120 : (logicLatency < 5 ? 50 : 0)
+    
     ctx.strokeStyle = `hsl(${hue}, 100%, 50%)`
     ctx.lineWidth = 20
     ctx.lineCap = 'round'
@@ -201,43 +181,31 @@ function MatcherSpeedometer({ avgLatency, p50Latency, p99Latency, successRate })
     ctx.arc(centerX, centerY, radius, Math.PI, endAngle, false)
     ctx.stroke()
 
-    // Draw center circle
     ctx.fillStyle = '#0B6E4F'
     ctx.beginPath()
     ctx.arc(centerX, centerY, 40, 0, Math.PI * 2)
     ctx.fill()
 
-    // Draw latency value
     ctx.fillStyle = '#FFF'
     ctx.font = 'bold 28px Inter, sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText(Math.round(avgLatency).toString(), centerX, centerY - 8)
+    ctx.fillText(logicLatency.toFixed(3), centerX, centerY - 8)
 
-    // Draw label (ms)
     ctx.fillStyle = 'rgba(255, 255, 255, 0.6)'
     ctx.font = '11px Inter, sans-serif'
-    ctx.fillText('ms', centerX, centerY + 12)
+    ctx.fillText('logic ms', centerX, centerY + 12)
 
-    // Draw min/max labels
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.4)'
-    ctx.font = '10px Inter, sans-serif'
-    ctx.textAlign = 'center'
-    ctx.fillText('0', centerX - radius - 10, centerY + 25)
-    ctx.fillText('300ms', centerX + radius + 10, centerY + 25)
-
-    // Draw success rate indicator
     ctx.fillStyle = '#0B6E4F'
     ctx.font = 'bold 16px Inter, sans-serif'
     ctx.textAlign = 'center'
     ctx.fillText(`${successRate}% Match Rate`, centerX, centerY + 70)
 
-  }, [avgLatency, p50Latency, p99Latency, successRate])
+  }, [logicLatency, successRate])
 
   return <canvas ref={canvasRef} id="speedometer" style={{ margin: '0 auto', display: 'block' }} />
 }
 
-// ── Status badge component ────────────────────────────────────────────────────
 function StatusBadge({ status }) {
   const map = {
     matched: ['b-ok', 'Matched'],
@@ -249,11 +217,11 @@ function StatusBadge({ status }) {
   return <span className={`badge ${cls}`}>{label}</span>
 }
 
-// ── Demo Section ──────────────────────────────────────────────────────────────
 function DemoSection() {
   const [tab, setTab] = useState('chart')
   const [transactions, setTransactions] = useState([])
   const [incidents, setIncidents] = useState([])
+  const [totalIncidents, setTotalIncidents] = useState(0)
   const [chartData, setChartData] = useState([])
   const [sources, setSources] = useState({ merchant: 'unknown', gateway: 'unknown', bank: 'unknown' })
   const [activeIncident, setActiveIncident] = useState(null)
@@ -273,25 +241,31 @@ function DemoSection() {
       if (incRes.status === 'fulfilled') {
         const items = incRes.value.items || []
         setIncidents(items)
+        setTotalIncidents(incRes.value.total_estimate || items.length)
         setActiveIncident(items[0] || null)
       }
       if (chartRes.status === 'fulfilled') setChartData(Array.isArray(chartRes.value) ? chartRes.value : [])
-      if (srcRes.status === 'fulfilled') setSources(srcRes.value)
+      if (srcRes.status === 'fulfilled') {
+        const normalized = {}
+        for (const [k, v] of Object.entries(srcRes.value)) {
+          normalized[k] = typeof v === 'object' ? v.status : v
+        }
+        setSources(normalized)
+      }
       if (speedRes.status === 'fulfilled') setSpeedometer(speedRes.value)
     } catch {}
   }, [])
 
   useEffect(() => { fetchAll() }, [fetchAll])
   
-  // Refresh speedometer every 1s for real-time feel
   useEffect(() => {
     const interval = setInterval(() => {
       apiFetch('/api/v1/metrics/matcher-speedometer').then(r => setSpeedometer(r)).catch(() => {})
+      apiFetch('/api/v1/incidents?status=open&limit=1').then(r => setTotalIncidents(r.total_estimate || 0)).catch(() => {})
     }, 1000)
     return () => clearInterval(interval)
   }, [])
 
-  // Refresh on WS events
   const wsLive = useReconWS(useCallback(msg => {
     if (['transaction_received', 'transaction_matched', 'transaction_progress'].includes(msg.type)) {
       apiFetch('/api/v1/transactions?limit=10').then(r => setTransactions(r.items || [])).catch(() => {})
@@ -302,6 +276,7 @@ function DemoSection() {
       apiFetch('/api/v1/incidents?status=open&limit=10').then(r => {
         const items = r.items || []
         setIncidents(items)
+        setTotalIncidents(r.total_estimate || items.length)
         setActiveIncident(prev => prev ? items.find(i => i.id === prev.id) || items[0] || null : items[0] || null)
       }).catch(() => {})
     }
@@ -339,12 +314,12 @@ function DemoSection() {
             Функциональная демонстрация
             <span className={`ws-pill ${wsLive ? 'live' : 'off'}`}>{wsLive ? 'LIVE' : 'OFFLINE'}</span>
           </h2>
-          <p className="sec-sub fade-up d2">Так выглядит CodeStorm в работе — реальные транзакции, реальные системы, реальное время.</p>
+          <p className="sec-sub fade-up d2">Так выглядит Chinor в работе — реальные транзакции, реальные системы, реальное время.</p>
         </div>
 
         <div className="src-health">
-          {Object.entries(sources).map(([src, status]) => (
-            <span key={src} className={`src-dot ${status}`}>{src}</span>
+          {['merchant', 'gateway', 'bank'].map(src => (
+            <span key={src} className={`src-dot ${sources[src] || 'offline'}`}>{src}</span>
           ))}
         </div>
 
@@ -353,11 +328,10 @@ function DemoSection() {
           <button className={`tb ${tab === 'speedometer' ? 'on' : ''}`} onClick={() => setTab('speedometer')}>⚡ Спидометр матчера</button>
           <button className={`tb ${tab === 'table' ? 'on' : ''}`} onClick={() => setTab('table')}>📋 Интерфейс оператора</button>
           <button className={`tb ${tab === 'incident' ? 'on' : ''}`} onClick={() => setTab('incident')}>
-            🔴 Инциденты {incidents.length > 0 && <span style={{ background: '#8B1E2F', color: '#fff', borderRadius: '100px', padding: '1px 7px', fontSize: '11px', marginLeft: '6px' }}>{incidents.length}</span>}
+            🔴 Инциденты {totalIncidents > 0 && <span style={{ background: '#8B1E2F', color: '#fff', borderRadius: '100px', padding: '1px 7px', fontSize: '11px', marginLeft: '6px' }}>{totalIncidents}</span>}
           </button>
         </div>
 
-        {/* TAB: Chart */}
         <div className={`tab-p ${tab === 'chart' ? 'on' : ''}`}>
           <div className="ch-panel">
             <div className="ch-hd">
@@ -378,39 +352,40 @@ function DemoSection() {
           </div>
         </div>
 
-        {/* TAB: Speedometer */}
         <div className={`tab-p ${tab === 'speedometer' ? 'on' : ''}`}>
           <div className="ch-panel" style={{ textAlign: 'center', padding: '40px 20px' }}>
             <div className="ch-hd" style={{ textAlign: 'center', marginBottom: '40px' }}>
               <div>
                 <div className="ch-title">Спидометр Matcher</div>
-                <div className="ch-meta">Среднее время обработки матча</div>
+                <div className="ch-meta">Производительность ядра vs Задержка системы</div>
               </div>
             </div>
             <MatcherSpeedometer 
               avgLatency={speedometer.avg_latency_ms || 0} 
-              p50Latency={speedometer.p50_latency_ms || 0}
-              p99Latency={speedometer.p99_latency_ms || 0}
+              logicLatency={speedometer.avg_logic_latency_ms || 0}
               successRate={speedometer.success_rate || 0} 
             />
             <div style={{ marginTop: '30px', display: 'flex', gap: '20px', justifyContent: 'center', flexWrap: 'wrap' }}>
               <div style={{ padding: '15px', background: 'rgba(11,110,79,0.1)', borderRadius: '8px', minWidth: '150px' }}>
-                <div style={{ fontSize: '12px', color: '#8895A8', marginBottom: '5px' }}>P50 Latency</div>
-                <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#0B6E4F' }}>{speedometer.p50_latency_ms || 0}ms</div>
+                <div style={{ fontSize: '12px', color: '#8895A8', marginBottom: '5px' }}>Core Latency (P50)</div>
+                <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#0B6E4F' }}>{(speedometer.p50_logic_latency_ms || 0).toFixed(3)}ms</div>
               </div>
               <div style={{ padding: '15px', background: 'rgba(11,110,79,0.1)', borderRadius: '8px', minWidth: '150px' }}>
-                <div style={{ fontSize: '12px', color: '#8895A8', marginBottom: '5px' }}>P99 Latency</div>
-                <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#0B6E4F' }}>{speedometer.p99_latency_ms || 0}ms</div>
+                <div style={{ fontSize: '12px', color: '#8895A8', marginBottom: '5px' }}>System Latency (Avg)</div>
+                <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#0B6E4F' }}>{(speedometer.avg_latency_ms || 0).toFixed(3)}ms</div>
               </div>
               <div style={{ padding: '15px', background: 'rgba(139,30,47,0.1)', borderRadius: '8px', minWidth: '150px' }}>
-                <div style={{ fontSize: '12px', color: '#8895A8', marginBottom: '5px' }}>Ошибок</div>
+                <div style={{ fontSize: '12px', color: '#8895A8', marginBottom: '5px' }}>Ошибок (Total)</div>
                 <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#8B1E2F' }}>{speedometer.failed_matches || 0}</div>
               </div>
             </div>
+            <p style={{ marginTop: '20px', fontSize: '11px', color: '#8895A8', maxWidth: '500px', margin: '20px auto' }}>
+              * Core Latency показывает чистое время работы алгоритма в памяти. <br/>
+              * System Latency включает время записи в БД и сетевые задержки.
+            </p>
           </div>
         </div>
 
-        {/* TAB: Transactions table */}
         <div className={`tab-p ${tab === 'table' ? 'on' : ''}`}>
           <div className="tbl-panel">
             <table>
@@ -419,18 +394,20 @@ function DemoSection() {
                   <th>Transaction ID</th>
                   <th>Мерчант</th>
                   <th>Тип</th>
+                  <th>Задержка</th>
                   <th>Создан</th>
                   <th>Статус</th>
                 </tr>
               </thead>
               <tbody>
                 {transactions.length === 0 ? (
-                  <tr className="empty-row"><td colSpan={5}>Нет данных — ожидание транзакций...</td></tr>
+                  <tr className="empty-row"><td colSpan={6}>Нет данных — ожидание транзакций...</td></tr>
                 ) : transactions.map(tx => (
                   <tr key={tx.transaction_id}>
                     <td className="tx">{tx.transaction_id.slice(0, 18)}…</td>
                     <td>{tx.merchant_id || '—'}</td>
                     <td style={{ color: '#8895A8', fontSize: 13 }}>{tx.tx_type}</td>
+                    <td style={{ color: '#0B6E4F', fontWeight: 'bold' }}>{(tx.processing_time_ms || 0).toFixed(3)} мс</td>
                     <td style={{ color: '#8895A8', fontSize: 13 }}>{fmtAge(tx.created_at)}</td>
                     <td><StatusBadge status={tx.overall_status} /></td>
                   </tr>
@@ -440,7 +417,6 @@ function DemoSection() {
           </div>
         </div>
 
-        {/* TAB: Incident detail */}
         <div className={`tab-p ${tab === 'incident' ? 'on' : ''}`}>
           <div className="inc-panel">
             {!activeIncident ? (
@@ -516,7 +492,6 @@ function severityLabel(s) {
   return 'LOW'
 }
 
-// ── Hero SVG ──────────────────────────────────────────────────────────────────
 function HeroArt() {
   return (
     <div className="hero-art">
@@ -577,25 +552,24 @@ function HeroArt() {
           <text textAnchor="middle" y="10" fontFamily="Inter,sans-serif" fontSize="11" fill="#6B6B80">Банк</text>
           <text textAnchor="middle" y="82" fontFamily="Inter,sans-serif" fontSize="12" fontWeight="600" fill="#8B1E2F">1.8% записано</text>
         </g>
-        <g transform="translate(365,160)">
-          <rect x="-52" y="-18" width="104" height="36" rx="18" fill="#8B1E2F"/>
+        <g transform="translate(415,160)">
+          <rect x="-64" y="-18" width="128" height="36" rx="18" fill="#8B1E2F"/>
           <text textAnchor="middle" y="6" fontFamily="Inter,sans-serif" fontSize="12" fontWeight="700" fill="white" letterSpacing="0.5">⚠ fee_mismatch</text>
         </g>
-        <line x1="365" y1="142" x2="365" y2="158" stroke="#8B1E2F" strokeWidth="1" strokeDasharray="3,3" opacity=".6"/>
+        <line x1="415" y1="142" x2="415" y2="158" stroke="#8B1E2F" strokeWidth="1" strokeDasharray="3,3" opacity=".6"/>
         <rect x="20" y="440" width="200" height="64" rx="14" fill="white" opacity=".88" stroke="#C9A13B" strokeWidth="1"/>
         <circle cx="42" cy="472" r="6" fill="#2ECC71"/>
         <text x="56" y="466" fontFamily="Inter,sans-serif" fontSize="11" fontWeight="600" fill="#6B6B80">Задержка обработки</text>
-        <text x="56" y="484" fontFamily="'Playfair Display',serif" fontSize="20" fontWeight="700" fill="#0B6E4F">0.014 мс</text>
+        <text x="56" y="484" fontFamily="'Playfair Display',serif" fontSize="20" fontWeight="700" fill="#0B6E4F">1.859 мс</text>
         <rect x="340" y="30" width="200" height="64" rx="14" fill="white" opacity=".88" stroke="#C9A13B" strokeWidth="1"/>
         <circle cx="362" cy="62" r="6" fill="#0B6E4F"/>
         <text x="376" y="56" fontFamily="Inter,sans-serif" fontSize="11" fontWeight="600" fill="#6B6B80">Событий в секунду</text>
-        <text x="376" y="74" fontFamily="'Playfair Display',serif" fontSize="20" fontWeight="700" fill="#0B6E4F">&gt; 5 000</text>
+        <text x="376" y="74" fontFamily="'Playfair Display',serif" fontSize="20" fontWeight="700" fill="#0B6E4F">&gt; 1000</text>
       </svg>
     </div>
   )
 }
 
-// ── Ornament dividers ─────────────────────────────────────────────────────────
 function OrnDivider1() {
   return (
     <div className="orn-sep">
@@ -657,7 +631,6 @@ function OrnDivider3() {
   )
 }
 
-// ── Main App ──────────────────────────────────────────────────────────────────
 export default function App() {
   const [theme, setTheme] = useState('light')
   const [lang, setLang] = useState('ru')
@@ -676,10 +649,9 @@ export default function App() {
 
   return (
     <>
-      {/* NAVBAR */}
       <nav className="nav">
         <div className="wrap">
-          <a href="#" className="logo">Code<b>Storm</b></a>
+          <a href="#" className="logo">Chinor</a>
           <div className="nav-links">
             <span className="nav-a" onClick={() => document.getElementById('stats')?.scrollIntoView({ behavior: 'smooth' })}>Потери бизнеса</span>
             <span className="nav-a" onClick={() => document.getElementById('tech')?.scrollIntoView({ behavior: 'smooth' })}>Технология</span>
@@ -696,7 +668,6 @@ export default function App() {
         </div>
       </nav>
 
-      {/* HERO */}
       <section className="hero">
         <div className="wrap" style={{ width: '100%' }}>
           <div className="hero-grid">
@@ -705,10 +676,10 @@ export default function App() {
               <h1 className="hero-h1 fade-up d1">
                 Сверка платежей<br />в <em>реальном времени</em>
               </h1>
-              {lang === 'ru' && <p className="hero-h1-uz fade-up d2">To'lovlarni real vaqtda moslashtirish</p>}
+              {lang === 'ru' && <p className="hero-h1-uz fade-up d2"></p>}
               <p className="hero-sub fade-up d2">
                 {lang === 'ru'
-                  ? 'Обнаруживайте расхождения за миллисекунды, а не за часы. Без скрытых комиссий — без процентов.'
+                  ? 'Обнаруживайте расхождения за миллисекунды, а не за часы.  '
                   : 'Farqlarni soatlar emas, millisekundlarda aniqlang. Yashirin komissiyalarsiz.'}
               </p>
               <div className="hero-btns fade-up d3">
@@ -728,7 +699,6 @@ export default function App() {
 
       <OrnDivider1 />
 
-      {/* STATS */}
       <section className="stats-sec" id="stats">
         <div className="wrap">
           <div className="sec-hd">
@@ -738,9 +708,9 @@ export default function App() {
           </div>
           <div className="stats-grid">
             {[
-              { num: '24ч', title: 'Задержка обнаружения расхождений', desc: 'Среднее время, за которое бухгалтер обнаруживает несоответствие между записями мерчанта, шлюза и банка.' },
-              { num: '3–7%', title: 'Неучтённые комиссии в системах', desc: 'Комиссии, которые разнятся в записях Click, Payme и Kapitalbank — и нигде не сходятся автоматически.' },
-              { num: '40%', title: 'Времени уходит на ручную сверку', desc: 'Каждый третий финансовый сотрудник тратит половину дня на сравнение таблиц вместо анализа.' },
+              { num: '3–4%', title: 'Сбои платежей', desc: 'цифровых платежей завершаются неудачей, и больше половины таких сбоев никогда не превращаются в успешную оплату.' },
+              { num: '5–20ч', title: 'Потери времени', desc: 'Более 70% компаний тратят 5–20 часов в неделю на ручную сверку и разбор расхождений.' },
+              { num: 'Loss', title: 'Утечка выручки', desc: 'Даже небольшая доля ошибок в платёжном потоке оборачивается постоянной утечкой выручки и потерей продуктивности.' },
             ].map((s, i) => (
               <div className={`sc fade-up d${i + 1}`} key={i}>
                 <div className="sc-num">{s.num}</div>
@@ -752,7 +722,7 @@ export default function App() {
           </div>
           <div className="stats-note fade-up">
             Распределённые платёжные системы страдают от <strong>позднего обнаружения расхождений</strong>,{' '}
-            <strong>пропущенных транзакций</strong> и <strong>дублей</strong>. CodeStorm закрывает этот разрыв
+            <strong>пропущенных транзакций</strong> и <strong>дублей</strong>. Chinor закрывает этот разрыв
             автоматически — в режиме реального времени.
           </div>
         </div>
@@ -760,18 +730,17 @@ export default function App() {
 
       <OrnDivider2 />
 
-      {/* TECH */}
       <section className="tech-sec" id="tech">
         <div className="wrap">
           <div className="sec-hd">
             <div className="sec-tag fade-up">Архитектура</div>
             <h2 className="sec-h2 fade-up d1">Технология, которой можно доверять</h2>
-            <p className="sec-sub fade-up d2">Построена на Rust и in-memory обработке. Мы не компрометируем на производительности — никогда.</p>
+            <p className="sec-sub fade-up d2">Построена на Rust и in-memory обработке.  Мы ценим производительность.</p>
           </div>
           <div className="metrics-row fade-up">
             {[
               { num: '< 2мс', lbl: 'Полный цикл обработки события' },
-              { num: '5 000/сек', lbl: 'Пропускная способность' },
+              { num: '1000/сек', lbl: 'Пропускная способность' },
               { num: '99.99%', lbl: 'Точность обнаружения инцидентов' },
             ].map((m, i) => (
               <div className="met" key={i}>
@@ -784,22 +753,22 @@ export default function App() {
             {[
               {
                 title: 'Сверка в реальном времени',
-                desc: 'Rust + in-memory processing. Каждая транзакция сверяется мгновенно — без задержек на запись в базу.',
+                desc: 'Rust + in-memory processing. Каждая транзакция сверяется мгновенно без задержек на запись в базу.',
                 icon: <polyline points="2,12 8,6 14,11 20,4"/>,
               },
               {
                 title: 'Автоматическое обнаружение расхождений',
-                desc: 'Сумм, комиссий, валют и статусов — между мерчантом, Click/Payme/Uzum и любым банком Узбекистана.',
+                desc: 'Сверка всех сумм, комиссий, валют и статусов  между всеми пользователями цепи.',
                 icon: <><circle cx="11" cy="11" r="9"/><path d="M11 6 L11 11 L15 14"/></>,
               },
               {
                 title: 'Эскалация критических инцидентов',
-                desc: 'Критический мисмatch поднимается оператору менее чем за 10 секунд с полным контекстом.',
+                desc: 'Критические инциденты выводятся оператору меньше чем за 10 секунд.',
                 icon: <><path d="M11 2L3 7v8l8 5 8-5V7L11 2z"/><polyline points="11,12 11,7"/><circle cx="11" cy="14.5" r=".5" fill="currentColor"/></>,
               },
               {
                 title: 'Безопасность и идемпотентность',
-                desc: 'HMAC-подпись каждого события, идемпотентная обработка дублей, соответствие требованиям ЦБ РУз.',
+                desc: 'HMAC-подпись каждого события, идемпотентная обработка дублей.',
                 icon: <><rect x="3" y="11" width="16" height="9" rx="2"/><path d="M7 11V7a4 4 0 0 1 8 0v4"/></>,
               },
             ].map((f, i) => (
@@ -824,14 +793,13 @@ export default function App() {
 
       <DemoSection />
 
-      {/* FOOTER */}
       <footer>
         <div className="wrap">
           <div className="f-gold-line" />
           <div className="f-inner">
             <div>
-              <div className="f-logo">CodeStorm</div>
-              <div className="f-copy">© 2026 CodeStorm Uzbekistan.<br />Сверка платежей в реальном времени.</div>
+              <div className="f-logo">Chinor</div>
+              <div className="f-copy">© 2026 Chinor Uzbekistan.<br />Сверка платежей в реальном времени.</div>
             </div>
             <div className="f-links">
               <span className="f-a">Политика конфиденциальности</span>

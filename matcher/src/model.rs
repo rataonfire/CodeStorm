@@ -57,6 +57,8 @@ pub struct PartialTransaction {
     pub events: HashMap<Source, PaymentEvent>,
     pub first_seen_at_ms: i64,
     pub deadline_ms: i64,
+    #[serde(default)]
+    pub processing_time_micros: i64,
 }
 
 impl PartialTransaction {
@@ -66,6 +68,7 @@ impl PartialTransaction {
             events: HashMap::with_capacity(3),
             first_seen_at_ms,
             deadline_ms: first_seen_at_ms + timeout_ms as i64,
+            processing_time_micros: 0,
         }
     }
 
@@ -120,14 +123,14 @@ pub struct Incident {
     pub description: String,
 }
 
-/// Результат проверки инвариантов: либо matched, либо набор инцидентов.
+
 #[derive(Debug, Clone)]
 pub enum ReconciliationResult {
     Matched,
     Mismatched(Vec<Incident>),
 }
 
-/// Детали по каждому источнику для записи в reconciliation_details.
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ReconciliationDetail {
     pub source: Source,
@@ -155,7 +158,7 @@ pub fn check_invariants(partial: &PartialTransaction) -> ReconciliationResult {
 
     let mut incidents = Vec::new();
 
-    // I3: валюта одинакова
+
     if !(merchant.currency == gateway.currency && gateway.currency == bank.currency) {
         incidents.push(Incident {
             transaction_id: partial.transaction_id,
@@ -166,11 +169,11 @@ pub fn check_invariants(partial: &PartialTransaction) -> ReconciliationResult {
                 merchant.currency, gateway.currency, bank.currency
             ),
         });
-        // Если валюты разные, дальше проверять суммы бессмысленно.
+
         return ReconciliationResult::Mismatched(incidents);
     }
 
-    // I1: gateway.amount == merchant.amount
+
     if gateway.amount_minor != merchant.amount_minor {
         incidents.push(Incident {
             transaction_id: partial.transaction_id,
@@ -185,7 +188,7 @@ pub fn check_invariants(partial: &PartialTransaction) -> ReconciliationResult {
         });
     }
 
-    // I2: bank.amount == gateway.amount - gateway.fee
+
     let expected_bank_amount = gateway.amount_minor - gateway.fee_minor;
     if bank.amount_minor != expected_bank_amount {
         incidents.push(Incident {
@@ -289,7 +292,7 @@ pub fn build_details(partial: &PartialTransaction) -> Vec<ReconciliationDetail> 
     details
 }
 
-/// Событие для публикации в Redis Pub/Sub.
+
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum PubsubEvent {
@@ -348,7 +351,7 @@ mod tests {
 
     #[test]
     fn invariants_pass_on_correct_flow() {
-        // N=5_000_000 UZS, gateway комиссия 25_000, bank комиссия 10_000
+
         let mut p = PartialTransaction::new(Uuid::new_v4(), 0, 2000);
         p.events.insert(Source::Merchant, make_event(Source::Merchant, 5_000_000, 0));
         p.events.insert(Source::Gateway, make_event(Source::Gateway, 5_000_000, 25_000));
@@ -364,7 +367,7 @@ mod tests {
     fn invariants_detect_amount_mismatch() {
         let mut p = PartialTransaction::new(Uuid::new_v4(), 0, 2000);
         p.events.insert(Source::Merchant, make_event(Source::Merchant, 5_000_000, 0));
-        p.events.insert(Source::Gateway, make_event(Source::Gateway, 5_100_000, 25_000)); // !!! wrong
+        p.events.insert(Source::Gateway, make_event(Source::Gateway, 5_100_000, 25_000));
         p.events.insert(Source::Bank, make_event(Source::Bank, 5_075_000, 10_000));
 
         match check_invariants(&p) {
@@ -380,7 +383,7 @@ mod tests {
         let mut p = PartialTransaction::new(Uuid::new_v4(), 0, 2000);
         p.events.insert(Source::Merchant, make_event(Source::Merchant, 5_000_000, 0));
         p.events.insert(Source::Gateway, make_event(Source::Gateway, 5_000_000, 25_000));
-        // bank.amount должен быть 4_975_000, а пришло 4_900_000
+
         p.events.insert(Source::Bank, make_event(Source::Bank, 4_900_000, 10_000));
 
         match check_invariants(&p) {

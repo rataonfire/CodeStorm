@@ -44,7 +44,7 @@ pub async fn run(
             for stream_id in stream_key.ids {
                 let id_str = stream_id.id.clone();
 
-                // Ingestor stores the full JSON payload in the "payload" field.
+
                 let payload = match stream_id.map.get("payload") {
                     Some(redis::Value::Data(bytes)) => {
                         String::from_utf8_lossy(bytes).to_string()

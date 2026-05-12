@@ -1,0 +1,1 @@
+ALTER TABLE transactions ADD COLUMN processing_time_ms DOUBLE PRECISION DEFAULT 0;

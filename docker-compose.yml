@@ -113,7 +113,7 @@ services:
     container_name: recon-scenario
     environment:
       REDIS_URL: redis://redis:6379/0
-      SCENARIO_TPS: "5"
+      SCENARIO_TPS: "1000"
       SCENARIO_TX_TYPES: "card,transfer"
       SCENARIO_CURRENCY: "UZS"
       SCENARIO_AMOUNT_MIN: "10000"

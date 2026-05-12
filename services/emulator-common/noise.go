@@ -18,27 +18,27 @@ func ApplyNoise(event *PaymentTransactionEvent, cfg *NoiseConfig) (shouldSend bo
 	shouldSend = true
 	shouldDuplicate = false
 
-	// Пропуск
+
 	if rand.Float64() < cfg.MissingPct {
 		return false, false
 	}
 
-	// Искажение суммы
+
 	if rand.Float64() < cfg.WrongAmountPct {
 		event.AmountMinor = mutateAmount(event.AmountMinor)
 	}
 
-	// Искажение комиссии
+
 	if rand.Float64() < cfg.WrongFeePct {
 		event.FeeMinor = mutateFee(event.FeeMinor)
 	}
 
-	// Дубль
+
 	if rand.Float64() < cfg.DuplicatePct {
 		shouldDuplicate = true
 	}
 
-	// Задержка
+
 	if cfg.DelayMaxMs > 0 {
 		delayMs := cfg.DelayMinMs
 		if cfg.DelayMaxMs > cfg.DelayMinMs {
@@ -51,13 +51,13 @@ func ApplyNoise(event *PaymentTransactionEvent, cfg *NoiseConfig) (shouldSend bo
 }
 
 func mutateAmount(amount int64) int64 {
-	// +/- 10%
+
 	factor := 0.9 + rand.Float64()*0.2
 	return int64(float64(amount) * factor)
 }
 
 func mutateFee(fee int64) int64 {
-	// +/- 50%
+
 	factor := 0.5 + rand.Float64()
 	return int64(float64(fee) * factor)
 }

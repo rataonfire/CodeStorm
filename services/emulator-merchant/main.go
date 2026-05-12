@@ -80,8 +80,8 @@ func main() {
 			EventID:       uuid.New().String(),
 			TransactionID: canonical.TransactionID,
 			Source:        source,
-			AmountMinor:   canonical.AmountMinor, // merchant amount = N
-			FeeMinor:      0,                     // merchant fee = 0
+			AmountMinor:   canonical.AmountMinor,
+			FeeMinor:      0,                    
 			Currency:      canonical.Currency,
 			TimestampMs:   time.Now().UnixMilli(),
 			TxType:        canonical.TxType,
@@ -130,25 +130,25 @@ func applyNoise(event *PaymentEvent, missingPct, duplicatePct, wrongAmountPct, w
 	shouldSend = true
 	shouldDuplicate = false
 
-	// Пропуск
+
 	if randFloat() < missingPct {
 		return false, false
 	}
 
-	// Искажение суммы
+
 	if randFloat() < wrongAmountPct {
 		event.AmountMinor = mutateAmount(event.AmountMinor)
 		log.Printf("Applied amount noise: new amount=%d", event.AmountMinor)
 	}
 
-	// Merchant fee always 0, не искажаем
 
-	// Дубль
+
+
 	if randFloat() < duplicatePct {
 		shouldDuplicate = true
 	}
 
-	// Задержка
+
 	if delayMaxMs > 0 {
 		delayMs := delayMinMs
 		if delayMaxMs > delayMinMs {

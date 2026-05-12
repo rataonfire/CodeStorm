@@ -6,13 +6,13 @@ import (
 )
 
 type TransactionSummary struct {
-	TransactionID  string    `json:"transaction_id"`
-	OverallStatus  string    `json:"overall_status"` // pending, matched, mismatch, degraded
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
-	MerchantID     *string   `json:"merchant_id,omitempty"`
-	TxType         string    `json:"tx_type"`
-	// LastIncidentID убран, так как его нет в таблице transactions
+	TransactionID    string    `json:"transaction_id"`
+	OverallStatus    string    `json:"overall_status"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+	MerchantID       *string   `json:"merchant_id,omitempty"`
+	TxType           string    `json:"tx_type"`
+	ProcessingTimeMS float64   `json:"processing_time_ms"`
 }
 
 type ReconciliationDetail struct {

@@ -15,7 +15,7 @@ pub struct PostgresStore {
 impl PostgresStore {
     pub async fn connect(url: &str) -> Result<Self> {
         let pool = PgPoolOptions::new()
-            .max_connections(10)
+            .max_connections(25)
             .acquire_timeout(Duration::from_secs(5))
             .connect(url)
             .await?;
@@ -33,13 +33,15 @@ impl PostgresStore {
         currency: &str,
         tx_type: &str,
         merchant_id: Option<&str>,
+        processing_time_ms: f64,
     ) -> Result<()> {
         sqlx::query(
             r#"
-            INSERT INTO transactions (transaction_id, overall_status, currency, tx_type, merchant_id, created_at, updated_at)
-            VALUES ($1, $2::overall_status, $3, $4, $5, NOW(), NOW())
+            INSERT INTO transactions (transaction_id, overall_status, currency, tx_type, merchant_id, processing_time_ms, created_at, updated_at)
+            VALUES ($1, $2::overall_status, $3, $4, $5, $6, NOW(), NOW())
             ON CONFLICT (transaction_id) DO UPDATE SET
                 overall_status = EXCLUDED.overall_status,
+                processing_time_ms = EXCLUDED.processing_time_ms,
                 updated_at = NOW()
             "#,
         )
@@ -48,6 +50,7 @@ impl PostgresStore {
         .bind(currency)
         .bind(tx_type)
         .bind(merchant_id)
+        .bind(processing_time_ms)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -211,7 +214,7 @@ impl RedisStore {
 
     pub async fn load_all_windows(&self) -> Result<Vec<PartialTransaction>> {
         let mut c = self.conn.clone();
-        // Используем SCAN, чтобы не блокировать Redis на больших dataset'ах.
+
         let mut cursor: u64 = 0;
         let mut windows = Vec::new();
         loop {
@@ -252,7 +255,7 @@ impl RedisStore {
 
         let mut result = Vec::with_capacity(members.len());
         for m in members {
-            // Атомарный захват: ZREM возвращает 1 только если мы первые удалили
+
             let removed: i64 = c.zrem("deadlines", &m).await?;
             if removed == 1 {
                 if let Ok(id) = Uuid::parse_str(&m) {
@@ -304,7 +307,7 @@ impl RedisStore {
         let mut c = self.conn.clone();
         let key = format!("sources:{}", transaction_id);
         let added: i64 = c.sadd(&key, source.to_string()).await?;
-        // TTL чтобы не накапливать
+
         let _: () = c.expire(&key, 60).await?;
         Ok(added == 1)
     }
@@ -322,14 +325,14 @@ impl RedisStore {
         Ok(())
     }
 
-    // Metrics tracking methods
-    pub async fn record_event_processed(&self, source: &str, latency_ms: i64) -> Result<()> {
+
+    pub async fn record_event_processed(&self, source: &str, total_micros: i64, logic_micros: i64) -> Result<()> {
         let mut c = self.conn.clone();
         
-        // Increment event counter
+
         let _: () = c.incr("metrics:events:total", 1).await?;
         
-        // Record source last seen
+
         let now = Utc::now().to_rfc3339_opts(SecondsFormat::Nanos, true);
         let _: () = redis::cmd("SETEX")
             .arg(format!("source:last_seen:{}", source))
@@ -338,15 +341,17 @@ impl RedisStore {
             .query_async(&mut c)
             .await?;
         
-        // Increment source event count
+
         let _: () = c.incr(format!("source:events:{}", source), 1).await?;
         
-        // Add to latency histogram (just store for later retrieval)
-        let _: () = c.lpush("metrics:latencies", latency_ms.to_string()).await?;
-        // Keep only last 1000 measurements
-        let _: () = c.ltrim("metrics:latencies", 0, 999).await?;
+
+        let _: () = c.lpush("metrics:latencies:total", total_micros).await?;
+        let _: () = c.ltrim("metrics:latencies:total", 0, 999).await?;
         
-        // Set expiry on metrics to auto-clean old data
+        let _: () = c.lpush("metrics:latencies:logic", logic_micros).await?;
+        let _: () = c.ltrim("metrics:latencies:logic", 0, 999).await?;
+        
+
         let _: () = c.expire("metrics:events:total", 3600).await?;
         
         Ok(())
@@ -370,33 +375,34 @@ impl RedisStore {
         let total_events: i64 = c.get("metrics:events:total").await.unwrap_or(0);
         let success_matches: i64 = c.get("metrics:matches:success").await.unwrap_or(0);
         let failed_matches: i64 = c.get("metrics:matches:failed").await.unwrap_or(0);
-        let active_windows: i64 = (total_events - success_matches - failed_matches).max(0);
         
-        // Get latencies for percentile calculation
-        let latencies: Vec<String> = c.lrange("metrics:latencies", 0, -1).await.unwrap_or_default();
-        let mut latency_values: Vec<i64> = latencies
-            .iter()
-            .filter_map(|s| s.parse::<i64>().ok())
-            .collect();
-        latency_values.sort();
+
+        let total_latencies: Vec<String> = c.lrange("metrics:latencies:total", 0, -1).await.unwrap_or_default();
+        let mut total_vals: Vec<i64> = total_latencies.iter().filter_map(|s| s.parse::<i64>().ok()).collect();
+        total_vals.sort();
         
-        let p50 = if !latency_values.is_empty() {
-            latency_values[latency_values.len() / 2]
-        } else {
-            0
+        let logic_latencies: Vec<String> = c.lrange("metrics:latencies:logic", 0, -1).await.unwrap_or_default();
+        let mut logic_vals: Vec<i64> = logic_latencies.iter().filter_map(|s| s.parse::<i64>().ok()).collect();
+        logic_vals.sort();
+        
+        let calc_stats = |vals: &Vec<i64>| {
+            if vals.is_empty() {
+                return (0.0, 0.0, 0.0);
+            }
+            let p50 = vals[vals.len() / 2] as f64 / 1000.0;
+            let p99 = vals[std::cmp::min(vals.len() * 99 / 100, vals.len() - 1)] as f64 / 1000.0;
+            let avg = (vals.iter().sum::<i64>() as f64 / vals.len() as f64) / 1000.0;
+            (p50, p99, avg)
         };
+
+        let (total_p50, total_p99, total_avg) = calc_stats(&total_vals);
+        let (logic_p50, logic_p99, logic_avg) = calc_stats(&logic_vals);
         
-        let p99 = if !latency_values.is_empty() {
-            latency_values[std::cmp::min(latency_values.len() * 99 / 100, latency_values.len() - 1)]
-        } else {
-            0
-        };
-        
-        let throughput = total_events; // In production, would calculate per second
+        let throughput = total_events;
         
         Ok(serde_json::json!({
             "events_processed": total_events,
-            "throughput_eps": throughput / 60, // Rough estimate
+            "throughput_eps": throughput / 60,
             "successful_matches": success_matches,
             "failed_matches": failed_matches,
             "match_success_rate": if success_matches + failed_matches > 0 {
@@ -406,13 +412,14 @@ impl RedisStore {
             },
             "active_windows": (total_events - success_matches - failed_matches).max(0),
             "latency": {
-                "p50_ms": p50,
-                "p99_ms": p99,
-                "avg_ms": if !latency_values.is_empty() {
-                    latency_values.iter().sum::<i64>() / latency_values.len() as i64
-                } else {
-                    0
-                }
+                "p50_ms": total_p50,
+                "p99_ms": total_p99,
+                "avg_ms": total_avg
+            },
+            "logic_latency": {
+                "p50_ms": logic_p50,
+                "p99_ms": logic_p99,
+                "avg_ms": logic_avg
             }
         }))
     }

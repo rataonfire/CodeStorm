@@ -14,7 +14,7 @@ import (
 )
 
 func main() {
-	// Initialize database
+
 	dbURL := getEnv("POSTGRES_URL", "postgres://recon:recon@localhost:5432/recon?sslmode=disable")
 	db, err := initDB(dbURL)
 	if err != nil {
@@ -22,7 +22,7 @@ func main() {
 	}
 	defer db.Close()
 
-	// Initialize Redis
+
 	redisURL := getEnv("REDIS_URL", "redis://localhost:6379/0")
 	rdb, err := initRedis(redisURL)
 	if err != nil {
@@ -30,19 +30,19 @@ func main() {
 	}
 	defer rdb.Close()
 
-	// Initialize handlers
+
 	handler := NewHandler(db, rdb)
 
-	// Create Fiber app
+
 	app := fiber.New(fiber.Config{
 		ErrorHandler: customErrorHandler,
-		BodyLimit:    10 * 1024, // 10KB
+		BodyLimit:    10 * 1024,
 	})
 
 	app.Use(logger.New())
 	app.Use(recover.New())
 
-	// Health checks
+
 	app.Get("/healthz", func(c *fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusOK)
 	})
@@ -61,10 +61,10 @@ func main() {
 		return c.SendStatus(fiber.StatusOK)
 	})
 
-	// Event endpoints — :source is validated inside the handler
+
 	app.Post("/api/v1/events/:source", handler.handleEvent)
 
-	// Start server
+
 	port := getEnv("INGESTOR_PORT", "8080")
 	go func() {
 		if err := app.Listen(":" + port); err != nil {
@@ -74,7 +74,7 @@ func main() {
 
 	log.Printf("Ingestor started on port %s", port)
 
-	// Graceful shutdown
+
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit

@@ -9,6 +9,7 @@ use anyhow::Result;
 use chrono::Utc;
 use dashmap::DashMap;
 use std::sync::Arc;
+use tokio::task::JoinSet;
 use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid;
 
@@ -36,7 +37,7 @@ impl MatchingEngine {
         }
     }
 
-    /// Восстановить state из Redis при старте (для отказоустойчивости).
+
     pub async fn restore_from_redis(&self) -> Result<()> {
         let windows = self.redis.load_all_windows().await?;
         let count = windows.len();
@@ -47,9 +48,9 @@ impl MatchingEngine {
         Ok(())
     }
 
-    /// Обработать одно сообщение из Stream.
-    /// Возвращает Ok(()) если обработка успешна — стрим может XACK.
-    /// Возвращает Err — сообщение НЕ ACKается, будет переотправлено.
+
+
+
     #[instrument(skip(self, msg), fields(
         transaction_id = %msg.event.transaction_id,
         source = %msg.event.source,
@@ -57,9 +58,9 @@ impl MatchingEngine {
     ))]
     pub async fn handle_event(&self, msg: StreamMessage) -> Result<()> {
         let event = msg.event;
-        let start_time = Utc::now().timestamp_millis();
+        let start_inst = std::time::Instant::now();
 
-        // 1. Дедупликация по event_id (защита от ретраев)
+
         let is_new = self
             .redis
             .try_claim_event(event.event_id, self.config.reconciler_dedup_window_ms)
@@ -72,15 +73,15 @@ impl MatchingEngine {
         let tx_id = event.transaction_id;
         let now_ms = Utc::now().timestamp_millis();
 
-        // 2. Регистрация источника в Redis (атомарная проверка дубля источника)
+
         let first_time_source = self.redis.try_register_source(tx_id, event.source).await?;
 
         if !first_time_source {
-            // Этот источник уже присылал событие для этой транзакции — дубль
+
             warn!("duplicate source for transaction");
-            // Ensure transaction row exists before inserting incident (FK constraint).
+
             self.pg
-                .upsert_transaction(tx_id, "pending", &event.currency, &event.tx_type, event.merchant_id.as_deref())
+                .upsert_transaction(tx_id, "pending", &event.currency, &event.tx_type, event.merchant_id.as_deref(), 0.0)
                 .await?;
             let incident = Incident {
                 transaction_id: tx_id,
@@ -93,13 +94,13 @@ impl MatchingEngine {
             };
             self.persist_incident(&incident).await?;
             
-            // Record metrics
-            let latency = Utc::now().timestamp_millis() - start_time;
-            let _ = self.redis.record_event_processed(&event.source.to_string(), latency).await;
+
+            let latency_micros = start_inst.elapsed().as_micros() as i64;
+            let _ = self.redis.record_event_processed(&event.source.to_string(), latency_micros, latency_micros).await;
             return Ok(());
         }
 
-        // 3. Получить или создать окно
+
         let mut window = self
             .windows
             .entry(tx_id)
@@ -111,10 +112,10 @@ impl MatchingEngine {
 
         let is_first_event = window.events.is_empty();
 
-        // 4. Добавить событие в окно
+
         window.events.insert(event.source, event.clone());
 
-        // Если это первое событие — публикуем "received" и регистрируем дедлайн
+
         if is_first_event {
             self.redis.add_deadline(tx_id, window.deadline_ms).await?;
             self.publisher
@@ -126,13 +127,17 @@ impl MatchingEngine {
                 .await?;
         }
 
-        // 5. Сохранить в память и Redis checkpoint
+
         self.windows.insert(tx_id, window.clone());
         self.redis.save_window(&window).await?;
 
-        // 6. Проверка комплектности
-        if window.is_complete(self.config.expected_sources_count) {
+
+        let logic_micros = if window.is_complete(self.config.expected_sources_count) {
+
+            window.processing_time_micros += start_inst.elapsed().as_micros() as i64;
+            let total_logic = window.processing_time_micros;
             self.finalize_window(window).await?;
+            total_logic
         } else {
             self.publisher
                 .publish_event(PubsubEvent::TransactionProgress {
@@ -141,18 +146,26 @@ impl MatchingEngine {
                     ts_ms: now_ms,
                 })
                 .await?;
-        }
+            
 
-        // Record metrics
-        let latency = Utc::now().timestamp_millis() - start_time;
-        let _ = self.redis.record_event_processed(&event.source.to_string(), latency).await;
+            window.processing_time_micros += start_inst.elapsed().as_micros() as i64;
+            let current_logic = window.processing_time_micros;
+            self.windows.insert(tx_id, window.clone());
+            self.redis.save_window(&window).await?;
+            current_logic
+        };
+
+
+        let total_micros = start_inst.elapsed().as_micros() as i64;
+        let _ = self.redis.record_event_processed(&event.source.to_string(), total_micros, logic_micros).await;
 
         Ok(())
     }
 
-    /// Завершить окно: проверить инварианты, записать в БД, опубликовать результат, очистить.
+
     #[instrument(skip(self, window), fields(transaction_id = %window.transaction_id))]
-    async fn finalize_window(&self, window: PartialTransaction) -> Result<()> {
+    async fn finalize_window(&self, mut window: PartialTransaction) -> Result<()> {
+        let finalize_start = std::time::Instant::now();
         let tx_id = window.transaction_id;
         let now_ms = Utc::now().timestamp_millis();
         let duration_ms = now_ms - window.first_seen_at_ms;
@@ -176,8 +189,12 @@ impl MatchingEngine {
             ReconciliationResult::Mismatched(_) => "mismatch",
         };
 
+
+        window.processing_time_micros += finalize_start.elapsed().as_micros() as i64;
+        let processing_time_ms = window.processing_time_micros as f64 / 1000.0;
+
         self.pg
-            .upsert_transaction(tx_id, overall_status, &currency, &tx_type, merchant_id.as_deref())
+            .upsert_transaction(tx_id, overall_status, &currency, &tx_type, merchant_id.as_deref(), processing_time_ms)
             .await?;
         self.pg.upsert_reconciliation_details(tx_id, &details).await?;
 
@@ -209,26 +226,26 @@ impl MatchingEngine {
         Ok(())
     }
 
-    /// Обработать истёкшее окно (вызывается из timer worker).
+
     #[instrument(skip(self), fields(transaction_id = %tx_id))]
     pub async fn handle_timeout(&self, tx_id: Uuid) -> Result<()> {
-        // Забираем окно из памяти
+
         let window = match self.windows.remove(&tx_id) {
             Some((_, w)) => w,
             None => {
-                // Уже обработано (race condition между finalize и timer)
+
                 debug!("window already cleaned up, ignoring timeout");
                 return Ok(());
             }
         };
 
-        // Если по факту все источники пришли — финализируем как обычно
+
         if window.is_complete(self.config.expected_sources_count) {
             self.finalize_window(window).await?;
             return Ok(());
         }
 
-        // Иначе — инцидент missing_source
+
         let missing = window.missing_sources();
         warn!(missing = ?missing, "timeout expired with incomplete window");
 
@@ -250,7 +267,7 @@ impl MatchingEngine {
             .and_then(|e| e.merchant_id.clone());
 
         self.pg
-            .upsert_transaction(tx_id, "degraded", &currency, &tx_type, merchant_id.as_deref())
+            .upsert_transaction(tx_id, "degraded", &currency, &tx_type, merchant_id.as_deref(), 0.0)
             .await?;
 
         let details = build_details(&window);
@@ -273,48 +290,83 @@ impl MatchingEngine {
         Ok(())
     }
 
-    /// Проверить и обработать все истёкшие дедлайны в Redis.
-    pub async fn process_expired_windows(&self) -> Result<()> {
+
+    pub async fn process_expired_windows(self: Arc<Self>) -> Result<()> {
         let now_ms = Utc::now().timestamp_millis();
         let expired_ids = self.redis.pop_expired_deadlines(now_ms).await?;
 
+        if expired_ids.is_empty() {
+            return Ok(());
+        }
+
+        let mut set = JoinSet::new();
         for tx_id in expired_ids {
-            if let Err(e) = self.handle_timeout(tx_id).await {
-                error!(transaction_id = %tx_id, error = %e, "failed to handle timeout");
+            let engine = self.clone();
+            set.spawn(async move {
+                if let Err(e) = engine.handle_timeout(tx_id).await {
+                    error!(transaction_id = %tx_id, error = %e, "failed to handle timeout");
+                }
+            });
+
+
+            if set.len() >= 50 {
+                set.join_next().await;
             }
         }
+
+        while set.join_next().await.is_some() {}
         Ok(())
     }
 
-    /// Проверить и обработать все истёкшие эскалации инцидентов.
-    pub async fn process_expired_escalations(&self) -> Result<()> {
+
+    pub async fn process_expired_escalations(self: Arc<Self>) -> Result<()> {
         let now_ms = Utc::now().timestamp_millis();
         let expired_incidents = self.redis.pop_expired_escalations(now_ms).await?;
 
+        if expired_incidents.is_empty() {
+            return Ok(());
+        }
+
+        let mut set = JoinSet::new();
         for incident_id in expired_incidents {
-            info!(incident_id, "escalating incident");
-            let escalated = self.pg.escalate_incident(incident_id, 2).await?;
-            if escalated {
-                self.publisher
-                    .publish_event(PubsubEvent::IncidentUpdated {
-                        incident_id,
-                        new_status: None, // Status stays 'open' during escalation
-                        new_severity: 2,
-                        ts_ms: now_ms,
-                    })
-                    .await?;
-                info!(incident_id, "incident severity increased to 2");
+            let engine = self.clone();
+            set.spawn(async move {
+                info!(incident_id, "escalating incident");
+                let escalated = match engine.pg.escalate_incident(incident_id, 2).await {
+                    Ok(res) => res,
+                    Err(e) => {
+                        error!(incident_id, error = %e, "failed to escalate incident");
+                        return;
+                    }
+                };
+                if escalated {
+                    let _ = engine.publisher
+                        .publish_event(PubsubEvent::IncidentUpdated {
+                            incident_id,
+                            new_status: None,
+                            new_severity: 2,
+                            ts_ms: Utc::now().timestamp_millis(),
+                        })
+                        .await;
+                    info!(incident_id, "incident severity increased to 2");
+                }
+            });
+
+            if set.len() >= 50 {
+                set.join_next().await;
             }
         }
+
+        while set.join_next().await.is_some() {}
         Ok(())
     }
 
-    /// Создать инцидент в БД и опубликовать событие.
+
     async fn persist_incident(&self, incident: &Incident) -> Result<()> {
         let id = self.pg.create_incident(incident).await?;
         let now_ms = Utc::now().timestamp_millis();
 
-        // Добавляем в таймер эскалации (severity 1 -> 2 через 10 секунд)
+
         if incident.severity == 1 {
             let escalate_at = now_ms + self.config.reconciler_escalation_ms as i64;
             self.redis.add_escalation(id, escalate_at).await?;
@@ -334,7 +386,7 @@ impl MatchingEngine {
         Ok(())
     }
 
-    /// Очистить состояние транзакции из памяти и Redis.
+
     async fn cleanup_window(&self, tx_id: Uuid) -> Result<()> {
         self.windows.remove(&tx_id);
         self.redis.delete_window(tx_id).await?;
@@ -343,7 +395,7 @@ impl MatchingEngine {
         Ok(())
     }
 
-    /// Получить текущее количество активных окон (для метрик и /debug).
+
     pub fn active_windows_count(&self) -> usize {
         self.windows.len()
     }
@@ -352,7 +404,7 @@ impl MatchingEngine {
     #[cfg(test)]
     mod tests {
     use super::*;
-    // Unit tests for MatchingEngine would require mocking PostgresStore and RedisStore.
-    // In a real project, we would use traits and mockall crate.
-    // For this MVP, core logic is tested in model.rs.
+
+
+
     }

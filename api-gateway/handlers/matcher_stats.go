@@ -18,27 +18,28 @@ type MatcherStats struct {
 	MatchSuccessRate int32       `json:"match_success_rate"`
 	ActiveWindows    int64       `json:"active_windows"`
 	Latency          LatencyStats `json:"latency"`
+	LogicLatency     LatencyStats `json:"logic_latency"`
 	Timestamp        time.Time   `json:"timestamp"`
 }
 
 type LatencyStats struct {
-	P50MS  int64 `json:"p50_ms"`
-	P99MS  int64 `json:"p99_ms"`
-	AvgMS  int64 `json:"avg_ms"`
+	P50MS  float64 `json:"p50_ms"`
+	P99MS  float64 `json:"p99_ms"`
+	AvgMS  float64 `json:"avg_ms"`
 }
 
 func GetMatcherStatsHandler(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	// Retrieve cached stats from Redis
+
 	statsJSON, err := redisClient.Get(ctx, "matcher:stats").Result()
 	if err != nil && err.Error() != "redis: nil" {
 		return c.Status(500).JSON(fiber.Map{"error": "failed to get matcher stats"})
 	}
 
 	if statsJSON == "" {
-		// Return default empty stats
+
 		return c.JSON(MatcherStats{
 			EventsProcessed:   0,
 			ThroughputEPS:     0,
@@ -64,48 +65,39 @@ func GetMatcherStatsHandler(c *fiber.Ctx) error {
 	return c.JSON(stats)
 }
 
-// GetMatcherSpeedometer returns real-time latency data for visualization
+
 func GetMatcherSpeedometer(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	// Get latency metrics from Redis
-	latencies, err := redisClient.LRange(ctx, "metrics:latencies", 0, -1).Result()
-	if err != nil && err.Error() != "redis: nil" {
-		latencies = []string{}
-	}
-
-	// Parse latencies
-	var latencyValues []int64
-	for _, s := range latencies {
-		if val, err := strconv.ParseInt(s, 10, 64); err == nil {
-			latencyValues = append(latencyValues, val)
+	calcLatency := func(key string) (avg, p50, p99 float64) {
+		latencies, _ := redisClient.LRange(ctx, key, 0, -1).Result()
+		var values []int64
+		for _, s := range latencies {
+			if val, err := strconv.ParseInt(s, 10, 64); err == nil {
+				values = append(values, val)
+			}
 		}
-	}
-
-	// Calculate statistics
-	var avgLatency, p50Latency, p99Latency int64
-	if len(latencyValues) > 0 {
-		// Average
+		if len(values) == 0 {
+			return 0, 0, 0
+		}
 		var sum int64
-		for _, v := range latencyValues {
+		for _, v := range values {
 			sum += v
 		}
-		avgLatency = sum / int64(len(latencyValues))
-
-		// Sort for percentiles
-		sort.Slice(latencyValues, func(i, j int) bool { return latencyValues[i] < latencyValues[j] })
-
-		// P50
-		p50Latency = latencyValues[len(latencyValues)/2]
-
-		// P99
-		idx := len(latencyValues) * 99 / 100
-		if idx >= len(latencyValues) {
-			idx = len(latencyValues) - 1
+		avg = float64(sum) / float64(len(values)) / 1000.0
+		sort.Slice(values, func(i, j int) bool { return values[i] < values[j] })
+		p50 = float64(values[len(values)/2]) / 1000.0
+		idx := len(values) * 99 / 100
+		if idx >= len(values) {
+			idx = len(values) - 1
 		}
-		p99Latency = latencyValues[idx]
+		p99 = float64(values[idx]) / 1000.0
+		return
 	}
+
+	avgL, p50L, p99L := calcLatency("metrics:latencies:total")
+	avgLogic, p50Logic, p99Logic := calcLatency("metrics:latencies:logic")
 
 	totalEvents, _ := redisClient.Get(ctx, "metrics:events:total").Int64()
 	successMatches, _ := redisClient.Get(ctx, "metrics:matches:success").Int64()
@@ -117,13 +109,16 @@ func GetMatcherSpeedometer(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"avg_latency_ms":      avgLatency,
-		"p50_latency_ms":      p50Latency,
-		"p99_latency_ms":      p99Latency,
-		"success_rate":        successRate,
-		"total_processed":     totalEvents,
-		"successful_matches":  successMatches,
-		"failed_matches":      failedMatches,
-		"timestamp":           time.Now().Unix(),
+		"avg_latency_ms":       avgL,
+		"p50_latency_ms":       p50L,
+		"p99_latency_ms":       p99L,
+		"avg_logic_latency_ms": avgLogic,
+		"p50_logic_latency_ms": p50Logic,
+		"p99_logic_latency_ms": p99Logic,
+		"success_rate":         successRate,
+		"total_processed":      totalEvents,
+		"successful_matches":   successMatches,
+		"failed_matches":       failedMatches,
+		"timestamp":            time.Now().Unix(),
 	})
 }

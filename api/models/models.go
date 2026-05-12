@@ -7,7 +7,7 @@ import (
 
 type TransactionSummary struct {
 	TransactionID  string    `json:"transaction_id"`
-	OverallStatus  string    `json:"overall_status"`   // pending, matched, mismatch, degraded
+	OverallStatus  string    `json:"overall_status"`  
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 	MerchantID     *string   `json:"merchant_id,omitempty"`
@@ -37,7 +37,7 @@ type Incident struct {
 	Severity            int             `json:"severity"`
 	Description         string          `json:"description"`
 	AffectedSources     []string        `json:"affected_sources"`
-	Status              string          `json:"status"`   // open, acknowledged, resolved
+	Status              string          `json:"status"`  
 	CreatedAt           time.Time       `json:"created_at"`
 	AcknowledgedAt      *time.Time      `json:"acknowledged_at,omitempty"`
 	ResolvedAt          *time.Time      `json:"resolved_at,omitempty"`

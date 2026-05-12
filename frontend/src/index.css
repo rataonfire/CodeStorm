@@ -1,4 +1,4 @@
-/* ═══════════════════════ TOKENS ═══════════════════════ */
+
 :root {
   --cream:   #FFF8F0;
   --cream2:  #FFF0E0;
@@ -22,23 +22,23 @@
   --shadow: 0 4px 32px rgba(0,0,0,.4);
 }
 
-/* ═══════════════════════ RESET ═══════════════════════ */
+
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth;font-size:16px}
 body{background:var(--cream);color:var(--graph);font-family:'Inter',sans-serif;overflow-x:hidden;transition:background .35s,color .35s}
 a{text-decoration:none;color:inherit}
 button{font-family:'Inter',sans-serif}
 
-/* ═══════════════════════ SCROLL ANIM ═══════════════════════ */
+
 .fade-up{opacity:0;transform:translateY(36px);transition:opacity .7s ease,transform .7s ease}
 .fade-up.vis{opacity:1;transform:none}
 .fade-up.d1{transition-delay:.1s}.fade-up.d2{transition-delay:.2s}
 .fade-up.d3{transition-delay:.3s}.fade-up.d4{transition-delay:.4s}
 
-/* ═══════════════════════ LAYOUT ═══════════════════════ */
+
 .wrap{max-width:1440px;margin:0 auto;padding:0 80px}
 
-/* ═══════════════════════ NAVBAR ═══════════════════════ */
+
 .nav{
   position:fixed;top:0;left:0;right:0;z-index:999;height:72px;
   display:flex;align-items:center;
@@ -63,7 +63,7 @@ button{font-family:'Inter',sans-serif}
 .btn-nav{background:var(--green);color:#fff;border:none;border-radius:10px;padding:9px 20px;font-size:13px;font-weight:600;cursor:pointer;transition:opacity .2s}
 .btn-nav:hover{opacity:.85}
 
-/* ═══════════════════════ HERO ═══════════════════════ */
+
 .hero{min-height:100vh;display:flex;align-items:center;padding-top:72px;position:relative;overflow:hidden}
 .hero-grid{display:grid;grid-template-columns:1fr 1fr;gap:64px;align-items:center}
 
@@ -111,11 +111,11 @@ button{font-family:'Inter',sans-serif}
 .ap{animation:alert-p 1.6s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
 .gp{animation:glow-p 2s ease-in-out infinite}
 
-/* ═══════════════════════ ORN DIVIDER ═══════════════════════ */
+
 .orn-sep{width:100%;height:52px;overflow:hidden;position:relative}
 .orn-sep svg{width:100%;height:100%}
 
-/* ═══════════════════════ SECTION 2 – STATS ═══════════════════════ */
+
 .stats-sec{
   padding:120px 0;position:relative;overflow:hidden;
   background:var(--cream);
@@ -159,7 +159,7 @@ button{font-family:'Inter',sans-serif}
 }
 .stats-note strong{color:var(--graph)}
 
-/* ═══════════════════════ SECTION 3 – TECH ═══════════════════════ */
+
 .tech-sec{
   padding:120px 0;position:relative;overflow:hidden;
   background:var(--cream2);
@@ -197,7 +197,7 @@ button{font-family:'Inter',sans-serif}
 .feat p{font-size:14px;color:var(--muted);line-height:1.65}
 .tech-cta{text-align:center}
 
-/* ═══════════════════════ SECTION 4 – DEMO ═══════════════════════ */
+
 .demo-sec{
   padding:120px 0;position:relative;overflow:hidden;
   background:#111420;
@@ -206,7 +206,7 @@ button{font-family:'Inter',sans-serif}
 .demo-sec .sec-sub{color:#8895A8}
 .demo-sec .sec-tag{border-color:rgba(201,161,59,.3);color:var(--gold)}
 
-/* WS status pill */
+
 .ws-pill{
   display:inline-flex;align-items:center;gap:6px;
   font-size:12px;font-weight:600;padding:4px 12px;
@@ -217,7 +217,7 @@ button{font-family:'Inter',sans-serif}
 .ws-pill.off{background:rgba(231,76,60,.15);color:#E74C3C}
 .ws-pill.off::before{content:'';width:7px;height:7px;border-radius:50%;background:#E74C3C}
 
-/* Source health pills */
+
 .src-health{display:flex;gap:8px;margin-bottom:20px;justify-content:flex-end}
 .src-dot{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:#8895A8;font-weight:500}
 .src-dot::before{content:'';width:7px;height:7px;border-radius:50%;background:#95A5A6}
@@ -296,7 +296,7 @@ button{font-family:'Inter',sans-serif}
 .btn-close-i:disabled{opacity:.4;cursor:not-allowed}
 .inc-no{text-align:center;padding:60px 0;color:#8895A8;font-size:15px}
 
-/* ═══════════════════════ FOOTER ═══════════════════════ */
+
 footer{background:#0A0C16;padding:56px 0;position:relative;overflow:hidden}
 .f-gold-line{height:1px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.4;margin-bottom:40px}
 .f-inner{display:flex;align-items:center;justify-content:space-between;position:relative}
@@ -306,7 +306,7 @@ footer{background:#0A0C16;padding:56px 0;position:relative;overflow:hidden}
 .f-a{font-size:13px;color:#8895A8;text-decoration:none;transition:color .2s;cursor:pointer}
 .f-a:hover{color:var(--green)}
 
-/* ═══════════════════════ RESPONSIVE ═══════════════════════ */
+
 @media(max-width:900px){
   .wrap{padding:0 24px}
   .hero-grid{grid-template-columns:1fr;gap:40px}

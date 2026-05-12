@@ -77,7 +77,7 @@ func main() {
 			continue
 		}
 
-		// Bank amount = N - F_g
+
 		amountMinor := canonical.AmountMinor - canonical.GatewayFeeMinor
 		if amountMinor < 0 {
 			amountMinor = 0

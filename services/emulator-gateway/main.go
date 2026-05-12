@@ -80,8 +80,8 @@ func main() {
 			EventID:       uuid.New().String(),
 			TransactionID: canonical.TransactionID,
 			Source:        source,
-			AmountMinor:   canonical.AmountMinor,     // gateway amount = N
-			FeeMinor:      canonical.GatewayFeeMinor, // gateway fee = F_g
+			AmountMinor:   canonical.AmountMinor,    
+			FeeMinor:      canonical.GatewayFeeMinor,
 			Currency:      canonical.Currency,
 			TimestampMs:   time.Now().UnixMilli(),
 			TxType:        canonical.TxType,

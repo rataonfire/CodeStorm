@@ -13,6 +13,6 @@ func Readyz(c *fiber.Ctx) error {
 	if err := db.Pool.Ping(c.Context()); err != nil {
 		return c.Status(503).SendString("database unavailable")
 	}
-	// Можно добавить проверку Redis
+
 	return c.SendString("ready")
 }
