@@ -135,73 +135,94 @@ function MismatchChart({ data }) {
   return <canvas ref={canvasRef} id="chart" />
 }
 
-function MatcherSpeedometer({ avgLatency, logicLatency, successRate }) {
+function MatcherSpeedometer({ avgLatency, p99Latency, successRate }) {
   const canvasRef = useRef(null)
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    
+
     const dpr = window.devicePixelRatio || 1
-    const W = 280
-    const H = 280
+    const W = 280, H = 280
     canvas.width = W * dpr
     canvas.height = H * dpr
     canvas.style.width = W + 'px'
     canvas.style.height = H + 'px'
-    
+
     const ctx = canvas.getContext('2d')
     ctx.scale(dpr, dpr)
     ctx.clearRect(0, 0, W, H)
 
-    const centerX = W / 2
-    const centerY = H / 2
-    const radius = 80
+    const cx = W / 2, cy = H / 2, r = 80
 
-    ctx.fillStyle = 'rgba(11, 110, 79, 0.1)'
-    ctx.beginPath()
-    ctx.arc(centerX, centerY, radius + 15, 0, Math.PI * 2)
-    ctx.fill()
+    // outer glow ring
+    ctx.fillStyle = 'rgba(11,110,79,0.08)'
+    ctx.beginPath(); ctx.arc(cx, cy, r + 20, 0, Math.PI * 2); ctx.fill()
 
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)'
-    ctx.lineWidth = 20
-    ctx.beginPath()
-    ctx.arc(centerX, centerY, radius, Math.PI, Math.PI * 2, false)
-    ctx.stroke()
-
-    const normalizedLogic = Math.min(logicLatency / 10, 1)
-    const endAngle = Math.PI + (Math.PI * normalizedLogic)
-    
-    let hue = logicLatency < 1 ? 120 : (logicLatency < 5 ? 50 : 0)
-    
-    ctx.strokeStyle = `hsl(${hue}, 100%, 50%)`
-    ctx.lineWidth = 20
+    // track (bottom half arc)
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)'
+    ctx.lineWidth = 18
     ctx.lineCap = 'round'
-    ctx.beginPath()
-    ctx.arc(centerX, centerY, radius, Math.PI, endAngle, false)
-    ctx.stroke()
+    ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, Math.PI * 2, false); ctx.stroke()
 
-    ctx.fillStyle = '#0B6E4F'
-    ctx.beginPath()
-    ctx.arc(centerX, centerY, 40, 0, Math.PI * 2)
-    ctx.fill()
+    // filled arc — avg latency, scale 0–2000ms
+    const maxMs = 2000
+    const norm = Math.min(avgLatency / maxMs, 1)
+    const endAngle = Math.PI + Math.PI * norm
+    // green → yellow → red
+    const hue = avgLatency < 200 ? 142 : avgLatency < 800 ? 45 : 0
+    const sat = avgLatency < 200 ? '70%' : '90%'
+    ctx.strokeStyle = `hsl(${hue}, ${sat}, 50%)`
+    ctx.lineWidth = 18
+    ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, endAngle, false); ctx.stroke()
 
+    // tick marks
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)'
+    ctx.lineWidth = 1
+    for (let i = 0; i <= 10; i++) {
+      const a = Math.PI + (Math.PI / 10) * i
+      const inner = r - 12, outer = r + 6
+      ctx.beginPath()
+      ctx.moveTo(cx + Math.cos(a) * inner, cy + Math.sin(a) * inner)
+      ctx.lineTo(cx + Math.cos(a) * outer, cy + Math.sin(a) * outer)
+      ctx.stroke()
+    }
+
+    // center disk
+    ctx.fillStyle = '#141828'
+    ctx.beginPath(); ctx.arc(cx, cy, r - 22, 0, Math.PI * 2); ctx.fill()
+
+    // avg value
     ctx.fillStyle = '#FFF'
-    ctx.font = 'bold 28px Inter, sans-serif'
+    ctx.font = 'bold 24px Inter,sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText(logicLatency.toFixed(3), centerX, centerY - 8)
+    ctx.fillText(avgLatency.toFixed(3), cx, cy - 10)
 
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)'
-    ctx.font = '11px Inter, sans-serif'
-    ctx.fillText('logic ms', centerX, centerY + 12)
+    ctx.fillStyle = 'rgba(255,255,255,0.45)'
+    ctx.font = '11px Inter,sans-serif'
+    ctx.fillText('avg ms', cx, cy + 12)
 
-    ctx.fillStyle = '#0B6E4F'
-    ctx.font = 'bold 16px Inter, sans-serif'
-    ctx.textAlign = 'center'
-    ctx.fillText(`${successRate}% Match Rate`, centerX, centerY + 70)
+    // match rate below
+    const rateColor = successRate >= 90 ? '#0B6E4F' : successRate >= 70 ? '#C9A13B' : '#8B1E2F'
+    ctx.fillStyle = rateColor
+    ctx.font = 'bold 15px Inter,sans-serif'
+    ctx.fillText(`${successRate}% matched`, cx, cy + 68)
 
-  }, [logicLatency, successRate])
+    // p99 label
+    ctx.fillStyle = 'rgba(255,255,255,0.3)'
+    ctx.font = '10px Inter,sans-serif'
+    ctx.fillText(`p99 ${p99Latency.toFixed(3)} ms`, cx, cy + 86)
+
+    // scale labels
+    ctx.fillStyle = 'rgba(255,255,255,0.25)'
+    ctx.font = '9px Inter,sans-serif'
+    ctx.textAlign = 'left'
+    ctx.fillText('0ms', cx - r - 10, cy + 18)
+    ctx.textAlign = 'right'
+    ctx.fillText('2000ms', cx + r + 10, cy + 18)
+
+  }, [avgLatency, p99Latency, successRate])
 
   return <canvas ref={canvasRef} id="speedometer" style={{ margin: '0 auto', display: 'block' }} />
 }
@@ -360,28 +381,27 @@ function DemoSection() {
                 <div className="ch-meta">Производительность ядра vs Задержка системы</div>
               </div>
             </div>
-            <MatcherSpeedometer 
-              avgLatency={speedometer.avg_latency_ms || 0} 
-              logicLatency={speedometer.avg_logic_latency_ms || 0}
-              successRate={speedometer.success_rate || 0} 
+            <MatcherSpeedometer
+              avgLatency={speedometer.avg_latency_ms || 0}
+              p99Latency={speedometer.p99_latency_ms || 0}
+              successRate={speedometer.success_rate || 0}
             />
             <div style={{ marginTop: '30px', display: 'flex', gap: '20px', justifyContent: 'center', flexWrap: 'wrap' }}>
               <div style={{ padding: '15px', background: 'rgba(11,110,79,0.1)', borderRadius: '8px', minWidth: '150px' }}>
-                <div style={{ fontSize: '12px', color: '#8895A8', marginBottom: '5px' }}>Core Latency (P50)</div>
-                <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#0B6E4F' }}>{(speedometer.p50_logic_latency_ms || 0).toFixed(3)}ms</div>
+                <div style={{ fontSize: '12px', color: '#8895A8', marginBottom: '5px' }}>Latency P50</div>
+                <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#0B6E4F' }}>{(speedometer.p50_latency_ms || 0).toFixed(3)} ms</div>
               </div>
               <div style={{ padding: '15px', background: 'rgba(11,110,79,0.1)', borderRadius: '8px', minWidth: '150px' }}>
-                <div style={{ fontSize: '12px', color: '#8895A8', marginBottom: '5px' }}>System Latency (Avg)</div>
-                <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#0B6E4F' }}>{(speedometer.avg_latency_ms || 0).toFixed(3)}ms</div>
+                <div style={{ fontSize: '12px', color: '#8895A8', marginBottom: '5px' }}>Latency P99</div>
+                <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#0B6E4F' }}>{(speedometer.p99_latency_ms || 0).toFixed(3)} ms</div>
               </div>
               <div style={{ padding: '15px', background: 'rgba(139,30,47,0.1)', borderRadius: '8px', minWidth: '150px' }}>
-                <div style={{ fontSize: '12px', color: '#8895A8', marginBottom: '5px' }}>Ошибок (Total)</div>
-                <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#8B1E2F' }}>{speedometer.failed_matches || 0}</div>
+                <div style={{ fontSize: '12px', color: '#8895A8', marginBottom: '5px' }}>Открытых инцидентов</div>
+                <div style={{ fontSize: '20px', fontWeight: 'bold', color: totalIncidents > 0 ? '#8B1E2F' : '#0B6E4F' }}>{totalIncidents}</div>
               </div>
             </div>
-            <p style={{ marginTop: '20px', fontSize: '11px', color: '#8895A8', maxWidth: '500px', margin: '20px auto' }}>
-              * Core Latency показывает чистое время работы алгоритма в памяти. <br/>
-              * System Latency включает время записи в БД и сетевые задержки.
+            <p style={{ marginTop: '20px', fontSize: '11px', color: '#8895A8', maxWidth: '500px', margin: '20px auto 0' }}>
+              Avg Latency — среднее время обработки одного события matcher'ом (включая Redis и БД). P99 — хвост распределения.
             </p>
           </div>
         </div>
